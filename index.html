@@ -1,0 +1,826 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Heather’s Duck Game 🪠🦆</title>
+  <style>
+    :root{
+      --bg1:#0b2a3a;
+      --bg2:#0e6a87;
+      --panel: rgba(0,0,0,.35);
+      --text: #eaf7ff;
+      --accent: #ffda4a;
+      --danger: #ff4a6e;
+      --ok: #53f3a3;
+      --shadow: rgba(0,0,0,.35);
+    }
+    *{ box-sizing: border-box; }
+    html,body{ height:100%; margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; background:#071a25; color:var(--text); }
+    .wrap{
+      height:100%;
+      display:grid;
+      grid-template-rows:auto 1fr auto;
+      background:
+        radial-gradient(1200px 800px at 30% 20%, rgba(255,255,255,.08), transparent 60%),
+        linear-gradient(160deg, var(--bg1), var(--bg2));
+      overflow:hidden;
+    }
+
+    header{
+      display:flex;
+      gap:12px;
+      align-items:center;
+      justify-content:space-between;
+      padding:10px 12px;
+      background:var(--panel);
+      backdrop-filter: blur(6px);
+      border-bottom:1px solid rgba(255,255,255,.10);
+    }
+    header .left{ display:flex; align-items:baseline; gap:12px; }
+    header h1{ margin:0; font-size:16px; letter-spacing:.2px; }
+    header .sub{ opacity:.85; font-size:12px; }
+
+    .hud{
+      display:flex;
+      gap:10px;
+      align-items:center;
+      flex-wrap:wrap;
+      justify-content:flex-end;
+      font-size:12px;
+    }
+    .pill{
+      background: rgba(255,255,255,.10);
+      border:1px solid rgba(255,255,255,.12);
+      border-radius:999px;
+      padding:6px 10px;
+      display:flex;
+      gap:8px;
+      align-items:center;
+      box-shadow: 0 6px 18px var(--shadow);
+      user-select:none;
+    }
+    .pill strong{ font-weight:700; }
+    .btn{
+      cursor:pointer;
+      border:1px solid rgba(255,255,255,.16);
+      background: rgba(255,255,255,.12);
+      color:var(--text);
+      border-radius:12px;
+      padding:8px 10px;
+      font-size:12px;
+      box-shadow: 0 6px 18px var(--shadow);
+      transition: transform .08s ease, background .12s ease;
+      user-select:none;
+    }
+    .btn:hover{ background: rgba(255,255,255,.16); }
+    .btn:active{ transform: translateY(1px) scale(.99); }
+    .btn.primary{ border-color: rgba(255,218,74,.5); background: rgba(255,218,74,.22); }
+    .btn.danger{ border-color: rgba(255,74,110,.45); background: rgba(255,74,110,.18); }
+
+    main{
+      position:relative;
+      display:grid;
+      place-items:center;
+      padding:10px;
+    }
+
+    .stage{
+      width:min(980px, 96vw);
+      aspect-ratio: 16/9;
+      border-radius:20px;
+      position:relative;
+      overflow:hidden;
+      border:1px solid rgba(255,255,255,.14);
+      box-shadow: 0 18px 70px rgba(0,0,0,.35);
+      background:
+        radial-gradient(900px 600px at 70% 40%, rgba(255,255,255,.10), transparent 65%),
+        radial-gradient(700px 450px at 30% 70%, rgba(255,255,255,.08), transparent 60%),
+        linear-gradient(180deg, rgba(255,255,255,.05), rgba(0,0,0,.12));
+      touch-action:none;
+    }
+
+    .ripples{
+      position:absolute; inset:0;
+      background:
+        repeating-radial-gradient(circle at 20% 30%, rgba(255,255,255,.06) 0 2px, transparent 2px 18px),
+        repeating-radial-gradient(circle at 70% 60%, rgba(255,255,255,.05) 0 2px, transparent 2px 22px);
+      opacity:.30;
+      mix-blend-mode: overlay;
+      pointer-events:none;
+      animation: drift 8s linear infinite;
+    }
+    @keyframes drift{
+      from{ transform: translate3d(0,0,0) }
+      to{ transform: translate3d(-40px, 18px, 0) }
+    }
+
+    .overlay{
+      position:absolute;
+      inset:0;
+      display:grid;
+      place-items:center;
+      pointer-events:none;
+    }
+    .card{
+      pointer-events:auto;
+      width:min(520px, 92%);
+      border-radius:18px;
+      padding:16px 16px 14px;
+      background: rgba(0,0,0,.46);
+      border:1px solid rgba(255,255,255,.14);
+      backdrop-filter: blur(10px);
+      box-shadow: 0 16px 50px rgba(0,0,0,.45);
+      text-align:center;
+    }
+    .card h2{ margin:0 0 8px; font-size:18px; letter-spacing:.2px; }
+    .card p{ margin:0 0 12px; opacity:.9; font-size:13px; line-height:1.35; }
+    .row{ display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
+
+    footer{
+      padding:10px 12px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      background: rgba(0,0,0,.22);
+      border-top:1px solid rgba(255,255,255,.10);
+      font-size:12px;
+      opacity:.9;
+    }
+    footer kbd{
+      background: rgba(255,255,255,.10);
+      border:1px solid rgba(255,255,255,.12);
+      border-bottom-width:2px;
+      border-radius:8px;
+      padding:2px 6px;
+      font-size:11px;
+    }
+
+    .toast{
+      position:absolute;
+      left:50%;
+      bottom:14px;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,.45);
+      border:1px solid rgba(255,255,255,.14);
+      padding:8px 10px;
+      border-radius:12px;
+      font-size:12px;
+      opacity:0;
+      pointer-events:none;
+      transition: opacity .25s ease, transform .25s ease;
+      box-shadow: 0 12px 34px rgba(0,0,0,.35);
+      max-width:min(620px, 92%);
+      text-align:center;
+    }
+    .toast.show{
+      opacity:1;
+      transform: translateX(-50%) translateY(-4px);
+    }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <header>
+      <div class="left">
+        <h1>Heather’s Duck Game 🪠🦆</h1>
+        <div class="sub">Bop every duck to clear the level.</div>
+      </div>
+      <div class="hud">
+        <div class="pill">Level <strong id="levelLabel">1</strong></div>
+        <div class="pill">Ducks left <strong id="ducksLeftLabel">0</strong></div>
+        <div class="pill">Score <strong id="scoreLabel">0</strong></div>
+        <button class="btn" id="muteBtn" aria-label="Toggle sound">🔊 Sound</button>
+        <button class="btn danger" id="resetBtn">Reset</button>
+      </div>
+    </header>
+
+    <main>
+      <div class="stage" id="stage" aria-label="Game area">
+        <canvas id="canvas"></canvas>
+        <div class="ripples"></div>
+        <div class="overlay" id="overlay"></div>
+        <div class="toast" id="toast"></div>
+      </div>
+    </main>
+
+    <footer>
+      <div>
+        Controls: Click/tap ducks to 🪠 | <kbd>Space</kbd> pause | <kbd>R</kbd> reset | <kbd>M</kbd> mute
+      </div>
+      <div>
+        Tip: On mobile, tap fast like you’re swatting tiny chaos.
+      </div>
+    </footer>
+  </div>
+
+<script>
+(() => {
+  'use strict';
+
+  const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+  const rand = (min, max) => Math.random() * (max - min) + min;
+  const choice = (arr) => arr[(Math.random() * arr.length) | 0];
+  const now = () => performance.now();
+
+  const stage = document.getElementById('stage');
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d', { alpha: true });
+
+  const overlay = document.getElementById('overlay');
+  const toastEl = document.getElementById('toast');
+
+  const levelLabel = document.getElementById('levelLabel');
+  const ducksLeftLabel = document.getElementById('ducksLeftLabel');
+  const scoreLabel = document.getElementById('scoreLabel');
+
+  const resetBtn = document.getElementById('resetBtn');
+  const muteBtn = document.getElementById('muteBtn');
+
+  const state = {
+    running: false,
+    paused: false,
+    level: 1,
+    score: 0,
+    ducks: [],
+    particles: [],
+    ripples: [],
+    lastT: now(),
+    muted: false,
+    pointer: { x: 0, y: 0, down: false },
+    baseDuckRadius: 26,
+    duckRadiusJitter: 8,
+    lakePadding: 28,
+  };
+
+  // ---- Audio (simple synth beeps, no assets)
+  let audioCtx = null;
+  function ensureAudio() {
+    if (state.muted) return null;
+    if (!audioCtx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      audioCtx = new AC();
+    }
+    if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+    return audioCtx;
+  }
+
+  function beep(type='hit') {
+    const ac = ensureAudio();
+    if (!ac) return;
+
+    const t0 = ac.currentTime;
+    const o = ac.createOscillator();
+    const g = ac.createGain();
+
+    const settings = {
+      hit:   { f1: 220, f2: 90,  dur: 0.08, wave: 'square',   gain: 0.10 },
+      win:   { f1: 660, f2: 990, dur: 0.16, wave: 'triangle', gain: 0.08 },
+      click: { f1: 420, f2: 300, dur: 0.06, wave: 'sine',     gain: 0.06 },
+    }[type] || { f1: 220, f2: 110, dur: 0.08, wave: 'sine', gain: 0.06 };
+
+    o.type = settings.wave;
+    o.frequency.setValueAtTime(settings.f1, t0);
+    o.frequency.exponentialRampToValueAtTime(settings.f2, t0 + settings.dur);
+
+    g.gain.setValueAtTime(settings.gain, t0);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + settings.dur);
+
+    o.connect(g);
+    g.connect(ac.destination);
+
+    o.start(t0);
+    o.stop(t0 + settings.dur);
+  }
+
+  // ---- Canvas sizing
+  function resize() {
+    const r = stage.getBoundingClientRect();
+    const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+    canvas.width = Math.floor(r.width * dpr);
+    canvas.height = Math.floor(r.height * dpr);
+    canvas.style.width = `${r.width}px`;
+    canvas.style.height = `${r.height}px`;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener('resize', resize);
+
+  // ---- Levels
+  function ducksForLevel(level) {
+    const base = 4;
+    const growth = Math.floor(Math.pow(level, 0.85) * 2.2);
+    return clamp(base + growth, 4, 44);
+  }
+
+  function speedForLevel(level) {
+    return clamp(0.55 + level * 0.045, 0.55, 2.0);
+  }
+
+  function spawnLevel(level) {
+    state.ducks = [];
+    state.particles = [];
+    state.ripples = [];
+
+    const count = ducksForLevel(level);
+    const speedScale = speedForLevel(level);
+
+    const w = stage.clientWidth;
+    const h = stage.clientHeight;
+    const pad = state.lakePadding;
+
+    const maxAttempts = 2000;
+    let attempts = 0;
+
+    while (state.ducks.length < count && attempts < maxAttempts) {
+      attempts++;
+      const r = state.baseDuckRadius + rand(-state.duckRadiusJitter, state.duckRadiusJitter);
+      const x = rand(pad + r, w - pad - r);
+      const y = rand(pad + r, h - pad - r);
+
+      const ok = state.ducks.every(d => Math.hypot(d.x - x, d.y - y) > (d.r + r) * 0.85);
+      if (!ok) continue;
+
+      const angle = rand(0, Math.PI * 2);
+      const sp = rand(40, 78) * speedScale;
+
+      state.ducks.push({
+        x, y, r,
+        vx: Math.cos(angle) * sp,
+        vy: Math.sin(angle) * sp,
+        bob: rand(0, Math.PI * 2),
+        alive: true,
+        hue: choice([42, 45, 48, 50]),
+      });
+    }
+
+    updateHUD();
+    showToast(`Level ${level}: ${count} duck${count === 1 ? '' : 's'} in the lake. Bring the 🪠.`);
+  }
+
+  // ---- HUD/Overlay/Toast
+  function updateHUD() {
+    levelLabel.textContent = String(state.level);
+    ducksLeftLabel.textContent = String(state.ducks.filter(d => d.alive).length);
+    scoreLabel.textContent = String(state.score);
+  }
+
+  let toastTimer = null;
+  function showToast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastEl.classList.remove('show'), 1600);
+  }
+
+  const setOverlay = (html) => { overlay.innerHTML = html; };
+  const hideOverlay = () => setOverlay('');
+
+  function showStartScreen() {
+    setOverlay(`
+      <div class="card">
+        <h2>Heather’s Duck Game 🪠🦆</h2>
+        <p>
+          Tap ducks to plunger-bop them. Clear the lake to level up.
+          Ducks get more numerous (and a little more zippy) each round.
+        </p>
+        <div class="row">
+          <button class="btn primary" id="startBtn">Start</button>
+          <button class="btn" id="howBtn">How to play</button>
+        </div>
+      </div>
+    `);
+
+    document.getElementById('startBtn').onclick = () => { beep('click'); startGame(); };
+    document.getElementById('howBtn').onclick = () => {
+      beep('click');
+      showToast('Click/tap ducks. Space = pause. R = reset. M = mute. 🪠');
+    };
+  }
+
+  function showPauseScreen() {
+    setOverlay(`
+      <div class="card">
+        <h2>Paused</h2>
+        <p>Take a breath. The ducks are still plotting.</p>
+        <div class="row">
+          <button class="btn primary" id="resumeBtn">Resume</button>
+          <button class="btn danger" id="resetBtn2">Reset</button>
+        </div>
+      </div>
+    `);
+    document.getElementById('resumeBtn').onclick = () => togglePause(false);
+    document.getElementById('resetBtn2').onclick = () => resetGame();
+  }
+
+  // ---- Effects
+  function addRipple(x, y, power=1) {
+    state.ripples.push({ x, y, r: 6, a: 0.55 * power, w: 1.6 + power * 0.6 });
+  }
+
+  function addPlungeBurst(x, y) {
+    const n = 10 + (Math.random() * 6 | 0);
+    for (let i = 0; i < n; i++) {
+      const ang = rand(0, Math.PI * 2);
+      const sp = rand(80, 200);
+      state.particles.push({
+        x, y,
+        vx: Math.cos(ang) * sp,
+        vy: Math.sin(ang) * sp,
+        r: rand(2, 4.2),
+        life: rand(0.25, 0.45),
+        t: 0,
+      });
+    }
+  }
+
+  // ---- Input
+  function stagePointFromEvent(e) {
+    const r = stage.getBoundingClientRect();
+    const clientX = (e.touches && e.touches[0]) ? e.touches[0].clientX : e.clientX;
+    const clientY = (e.touches && e.touches[0]) ? e.touches[0].clientY : e.clientY;
+    return { x: clientX - r.left, y: clientY - r.top };
+  }
+
+  function tryHit(x, y) {
+    if (!state.running || state.paused) return;
+
+    let best = null;
+    let bestD = Infinity;
+
+    for (const d of state.ducks) {
+      if (!d.alive) continue;
+      const dist = Math.hypot(d.x - x, d.y - y);
+      if (dist <= d.r && dist < bestD) { bestD = dist; best = d; }
+    }
+
+    addRipple(x, y, 1);
+
+    if (best) {
+      best.alive = false;
+      state.score += Math.max(5, Math.floor(25 - bestD));
+      beep('hit');
+      addPlungeBurst(best.x, best.y);
+      addRipple(best.x, best.y, 1.4);
+      showToast('🪠 BONK!');
+      updateHUD();
+
+      if (state.ducks.every(d => !d.alive)) levelComplete();
+    } else {
+      state.score = Math.max(0, state.score - 1);
+      updateHUD();
+    }
+  }
+
+  stage.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    stage.setPointerCapture?.(e.pointerId);
+    const p = stagePointFromEvent(e);
+    state.pointer = { x: p.x, y: p.y, down: true };
+    tryHit(p.x, p.y);
+  });
+  stage.addEventListener('pointermove', (e) => {
+    const p = stagePointFromEvent(e);
+    state.pointer.x = p.x; state.pointer.y = p.y;
+  });
+  stage.addEventListener('pointerup', () => { state.pointer.down = false; });
+
+  window.addEventListener('keydown', (e) => {
+    const k = e.key.toLowerCase();
+    if (k === ' ') { e.preventDefault(); togglePause(); }
+    else if (k === 'r') resetGame();
+    else if (k === 'm') toggleMute();
+  });
+
+  resetBtn.onclick = () => resetGame();
+  muteBtn.onclick = () => toggleMute();
+
+  function toggleMute() {
+    state.muted = !state.muted;
+    muteBtn.textContent = state.muted ? '🔇 Muted' : '🔊 Sound';
+    showToast(state.muted ? 'Muted.' : 'Sound on.');
+    if (!state.muted) ensureAudio();
+  }
+
+  // ---- Game Flow
+  function startGame() {
+    state.level = 1;
+    state.score = 0;
+    state.running = true;
+    state.paused = false;
+    resize();
+    spawnLevel(state.level);
+    hideOverlay();
+    state.lastT = now();
+    requestAnimationFrame(loop);
+  }
+
+  function resetGame() {
+    beep('click');
+    state.running = false;
+    state.paused = false;
+    state.level = 1;
+    state.score = 0;
+    state.ducks = [];
+    state.particles = [];
+    state.ripples = [];
+    updateHUD();
+    showStartScreen();
+  }
+
+  function togglePause(force) {
+    if (!state.running) return;
+    state.paused = (typeof force === 'boolean') ? !force : !state.paused;
+    if (state.paused) { beep('click'); showPauseScreen(); }
+    else { beep('click'); hideOverlay(); state.lastT = now(); requestAnimationFrame(loop); }
+  }
+
+  function levelComplete() {
+    state.paused = true;
+    beep('win');
+    const bonus = 50 + state.level * 10;
+    state.score += bonus;
+    updateHUD();
+
+    setOverlay(`
+      <div class="card">
+        <h2>Lake Cleared ✅</h2>
+        <p>Level ${state.level} complete. Bonus <strong style="color: var(--ok)">${bonus}</strong>.</p>
+        <div class="row">
+          <button class="btn primary" id="nextBtn">Next level</button>
+          <button class="btn" id="replayBtn">Replay</button>
+        </div>
+      </div>
+    `);
+
+    document.getElementById('nextBtn').onclick = () => {
+      beep('click');
+      state.level += 1;
+      state.paused = false;
+      spawnLevel(state.level);
+      hideOverlay();
+      state.lastT = now();
+      requestAnimationFrame(loop);
+    };
+
+    document.getElementById('replayBtn').onclick = () => {
+      beep('click');
+      state.paused = false;
+      spawnLevel(state.level);
+      hideOverlay();
+      state.lastT = now();
+      requestAnimationFrame(loop);
+    };
+  }
+
+  // ---- Update/Render
+  function update(dt) {
+    const w = stage.clientWidth;
+    const h = stage.clientHeight;
+    const pad = state.lakePadding;
+
+    for (const d of state.ducks) {
+      if (!d.alive) continue;
+
+      d.bob += dt * 2.4;
+      d.x += d.vx * dt;
+      d.y += d.vy * dt;
+
+      const minX = pad + d.r, maxX = w - pad - d.r;
+      const minY = pad + d.r, maxY = h - pad - d.r;
+
+      if (d.x < minX) { d.x = minX; d.vx = Math.abs(d.vx); addRipple(d.x, d.y, 0.7); }
+      if (d.x > maxX) { d.x = maxX; d.vx = -Math.abs(d.vx); addRipple(d.x, d.y, 0.7); }
+      if (d.y < minY) { d.y = minY; d.vy = Math.abs(d.vy); addRipple(d.x, d.y, 0.7); }
+      if (d.y > maxY) { d.y = maxY; d.vy = -Math.abs(d.vy); addRipple(d.x, d.y, 0.7); }
+
+      const turn = rand(-1, 1) * dt * 0.65;
+      const cos = Math.cos(turn), sin = Math.sin(turn);
+      const nvx = d.vx * cos - d.vy * sin;
+      const nvy = d.vx * sin + d.vy * cos;
+      d.vx = nvx; d.vy = nvy;
+
+      const sp = Math.hypot(d.vx, d.vy);
+      const spMax = 220;
+      if (sp > spMax) {
+        d.vx = (d.vx / sp) * spMax;
+        d.vy = (d.vy / sp) * spMax;
+      }
+
+      if (Math.random() < dt * 0.35) addRipple(d.x, d.y + d.r*0.45, 0.35);
+    }
+
+    for (let i = state.particles.length - 1; i >= 0; i--) {
+      const p = state.particles[i];
+      p.t += dt;
+      const k = p.t / p.life;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vx *= (1 - dt * 3.2);
+      p.vy *= (1 - dt * 3.2);
+      if (k >= 1) state.particles.splice(i, 1);
+    }
+
+    for (let i = state.ripples.length - 1; i >= 0; i--) {
+      const r = state.ripples[i];
+      r.r += dt * 120;
+      r.a -= dt * 0.95;
+      if (r.a <= 0) state.ripples.splice(i, 1);
+    }
+  }
+
+  function drawDuck(d) {
+    const bob = Math.sin(d.bob) * 2.0;
+
+    ctx.save();
+    ctx.translate(d.x, d.y + bob);
+
+    ctx.globalAlpha = 0.18;
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.ellipse(0, d.r*0.55, d.r*0.82, d.r*0.35, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    ctx.fillStyle = `hsl(${d.hue} 95% 58%)`;
+    ctx.strokeStyle = 'rgba(0,0,0,.25)';
+    ctx.lineWidth = 2;
+
+    ctx.beginPath();
+    ctx.ellipse(0, 0, d.r*0.95, d.r*0.78, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.ellipse(d.r*0.62, -d.r*0.28, d.r*0.45, d.r*0.42, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = 'hsl(28 92% 56%)';
+    ctx.beginPath();
+    ctx.moveTo(d.r*1.15, -d.r*0.22);
+    ctx.quadraticCurveTo(d.r*1.45, -d.r*0.10, d.r*1.10, 0);
+    ctx.quadraticCurveTo(d.r*0.98, -d.r*0.10, d.r*1.15, -d.r*0.22);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = 'rgba(0,0,0,.75)';
+    ctx.beginPath();
+    ctx.arc(d.r*0.74, -d.r*0.38, Math.max(2.2, d.r*0.07), 0, Math.PI*2);
+    ctx.fill();
+
+    ctx.fillStyle = 'rgba(255,255,255,.8)';
+    ctx.beginPath();
+    ctx.arc(d.r*0.78, -d.r*0.42, Math.max(1.2, d.r*0.03), 0, Math.PI*2);
+    ctx.fill();
+
+    ctx.globalAlpha = 0.35;
+    ctx.strokeStyle = 'rgba(255,255,255,.35)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(0, d.r*0.58, d.r*1.05, d.r*0.45, 0, 0, Math.PI*2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    ctx.restore();
+  }
+
+  function drawPlungerCursor(x, y, pressed) {
+    const s = pressed ? 1.06 : 1.0;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(s, s);
+
+    ctx.strokeStyle = 'rgba(0,0,0,.35)';
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.fillStyle = 'hsl(24 35% 34%)';
+
+    // handle
+    ctx.beginPath();
+    ctx.roundRect(-4, -42, 8, 44, 4);
+    ctx.fill();
+    ctx.stroke();
+
+    // cup
+    ctx.fillStyle = 'hsl(350 85% 55%)';
+    ctx.beginPath();
+    ctx.roundRect(-22, -6, 44, 18, 10);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.roundRect(-28, 6, 56, 14, 12);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.globalAlpha = 0.25;
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.roundRect(-18, -2, 10, 8, 6);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    ctx.restore();
+  }
+
+  // roundRect fallback
+  if (!CanvasRenderingContext2D.prototype.roundRect) {
+    CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, r) {
+      const rr = Array.isArray(r) ? r : [r, r, r, r];
+      const [r1, r2, r3, r4] = rr.map(v => Math.max(0, Math.min(v, Math.min(w, h) / 2)));
+      this.beginPath();
+      this.moveTo(x + r1, y);
+      this.lineTo(x + w - r2, y);
+      this.quadraticCurveTo(x + w, y, x + w, y + r2);
+      this.lineTo(x + w, y + h - r3);
+      this.quadraticCurveTo(x + w, y + h, x + w - r3, y + h);
+      this.lineTo(x + r4, y + h);
+      this.quadraticCurveTo(x, y + h, x, y + h - r4);
+      this.lineTo(x, y + r1);
+      this.quadraticCurveTo(x, y, x + r1, y);
+      this.closePath();
+      return this;
+    };
+  }
+
+  function render() {
+    const w = stage.clientWidth;
+    const h = stage.clientHeight;
+
+    ctx.clearRect(0, 0, w, h);
+
+    const g = ctx.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, 'rgba(255,255,255,.06)');
+    g.addColorStop(1, 'rgba(0,0,0,.10)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+
+    // ripples
+    for (const r of state.ripples) {
+      ctx.save();
+      ctx.globalAlpha = r.a;
+      ctx.strokeStyle = 'rgba(255,255,255,.55)';
+      ctx.lineWidth = r.w;
+      ctx.beginPath();
+      ctx.ellipse(r.x, r.y, r.r, r.r*0.55, 0, 0, Math.PI*2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // ducks
+    for (const d of state.ducks) {
+      if (d.alive) drawDuck(d);
+    }
+
+    // particles
+    for (const p of state.particles) {
+      const k = p.t / p.life;
+      ctx.save();
+      ctx.globalAlpha = 1 - k;
+      ctx.fillStyle = 'rgba(255,255,255,.9)';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r * (1 - k * 0.35), 0, Math.PI*2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // cursor plunger
+    if (state.running && !state.paused) {
+      drawPlungerCursor(state.pointer.x, state.pointer.y, state.pointer.down);
+    }
+  }
+
+  function loop(t) {
+    if (!state.running || state.paused) return;
+    const dt = clamp((t - state.lastT) / 1000, 0, 0.033);
+    state.lastT = t;
+    update(dt);
+    render();
+    requestAnimationFrame(loop);
+  }
+
+  function boot() {
+    resize();
+    updateHUD();
+    showStartScreen();
+
+    const r = stage.getBoundingClientRect();
+    state.pointer.x = r.width / 2;
+    state.pointer.y = r.height / 2;
+
+    // idle render to keep the background alive while not running
+    const idle = () => {
+      if (state.running && !state.paused) return;
+      render();
+      requestAnimationFrame(idle);
+    };
+    requestAnimationFrame(idle);
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>
