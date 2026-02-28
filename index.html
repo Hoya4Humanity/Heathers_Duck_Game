@@ -26,7 +26,6 @@
         linear-gradient(160deg, var(--bg1), var(--bg2));
       overflow:hidden;
     }
-
     header{
       display:flex;
       gap:12px;
@@ -59,8 +58,14 @@
       align-items:center;
       box-shadow: 0 6px 18px var(--shadow);
       user-select:none;
+      white-space:nowrap;
     }
-    .pill strong{ font-weight:700; }
+    .pill strong{ font-weight:800; }
+    .pill.danger{
+      border-color: rgba(255,74,110,.35);
+      background: rgba(255,74,110,.14);
+    }
+
     .btn{
       cursor:pointer;
       border:1px solid rgba(255,255,255,.16);
@@ -75,7 +80,6 @@
     }
     .btn:hover{ background: rgba(255,255,255,.16); }
     .btn:active{ transform: translateY(1px) scale(.99); }
-    .btn.primary{ border-color: rgba(255,218,74,.5); background: rgba(255,218,74,.22); }
     .btn.danger{ border-color: rgba(255,74,110,.45); background: rgba(255,74,110,.18); }
 
     main{
@@ -124,7 +128,7 @@
     }
     .card{
       pointer-events:auto;
-      width:min(520px, 92%);
+      width:min(640px, 92%);
       border-radius:18px;
       padding:16px 16px 14px;
       background: rgba(0,0,0,.46);
@@ -170,7 +174,7 @@
       pointer-events:none;
       transition: opacity .25s ease, transform .25s ease;
       box-shadow: 0 12px 34px rgba(0,0,0,.35);
-      max-width:min(620px, 92%);
+      max-width:min(720px, 92%);
       text-align:center;
     }
     .toast.show{
@@ -185,12 +189,15 @@
     <header>
       <div class="left">
         <h1>Heather’s Duck Game 🪠🦆</h1>
-        <div class="sub">Bop every duck to clear the level.</div>
+        <div class="sub">BONK ducks, BOINK bosses, survive the timer ⏱️</div>
       </div>
       <div class="hud">
         <div class="pill">Level <strong id="levelLabel">1</strong></div>
-        <div class="pill">Ducks left <strong id="ducksLeftLabel">0</strong></div>
+        <div class="pill">Ducks <strong id="ducksLeftLabel">0</strong></div>
         <div class="pill">Score <strong id="scoreLabel">0</strong></div>
+        <div class="pill" id="timePill">Time <strong id="timeLabel">0:00</strong></div>
+        <div class="pill">🧻 TP <strong id="tpLabel">Ready</strong></div>
+        <div class="pill" id="bossPill" style="display:none;">BOSS <strong id="bossLabel">❤️❤️❤️</strong></div>
         <button class="btn" id="muteBtn" aria-label="Toggle sound">🔊 Sound</button>
         <button class="btn danger" id="resetBtn">Reset</button>
       </div>
@@ -207,10 +214,10 @@
 
     <footer>
       <div>
-        Controls: Click/tap ducks to 🪠 | <kbd>Space</kbd> pause | <kbd>R</kbd> reset | <kbd>M</kbd> mute
+        Controls: click/tap 🪠 | double-tap 🧻 | <kbd>Space</kbd> pause | <kbd>R</kbd> reset | <kbd>M</kbd> mute
       </div>
       <div>
-        Tip: On mobile, tap fast like you’re swatting tiny chaos.
+        Boss rounds every 3 levels. Don’t get splashed 😤🦆
       </div>
     </footer>
   </div>
@@ -219,11 +226,23 @@
 (() => {
   'use strict';
 
+  // =======================
+  // Utilities + tiny helpers
+  // =======================
   const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
   const rand = (min, max) => Math.random() * (max - min) + min;
   const choice = (arr) => arr[(Math.random() * arr.length) | 0];
   const now = () => performance.now();
+  const fmtTime = (sec) => {
+    const s = Math.max(0, Math.ceil(sec));
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    return `${m}:${String(r).padStart(2,'0')}`;
+  };
 
+  // =======================
+  // DOM
+  // =======================
   const stage = document.getElementById('stage');
   const canvas = document.getElementById('canvas');
   const ctx = canvas.getContext('2d', { alpha: true });
@@ -235,26 +254,61 @@
   const ducksLeftLabel = document.getElementById('ducksLeftLabel');
   const scoreLabel = document.getElementById('scoreLabel');
 
+  const timeLabel = document.getElementById('timeLabel');
+  const timePill = document.getElementById('timePill');
+
+  const tpLabel = document.getElementById('tpLabel');
+
+  const bossPill = document.getElementById('bossPill');
+  const bossLabel = document.getElementById('bossLabel');
+
   const resetBtn = document.getElementById('resetBtn');
   const muteBtn = document.getElementById('muteBtn');
 
+  // =======================
+  // Game State
+  // =======================
   const state = {
     running: false,
     paused: false,
+
     level: 1,
     score: 0,
+
+    // time
+    timeLeft: 0,
+    levelTime: 0,
+
+    // entities
     ducks: [],
+    boss: null,          // {x,y,r,vx,vy,hp,hpMax, state, tState, telegraph, ...}
     particles: [],
     ripples: [],
-    lastT: now(),
-    muted: false,
+    floatTexts: [],      // comic callouts: BONK/BOINK
+
+    // screen juice
+    shakeT: 0,
+    shakeMag: 0,
+
+    // input
     pointer: { x: 0, y: 0, down: false },
+    lastT: now(),
+
+    // tuning
     baseDuckRadius: 26,
     duckRadiusJitter: 8,
     lakePadding: 28,
+
+    // TP special
+    tpCooldown: 2.5,
+    tpReadyAt: 0,
+
+    muted: false
   };
 
-  // ---- Audio (simple synth beeps, no assets)
+  // =======================
+  // Audio (no assets)
+  // =======================
   let audioCtx = null;
   function ensureAudio() {
     if (state.muted) return null;
@@ -276,9 +330,12 @@
     const g = ac.createGain();
 
     const settings = {
-      hit:   { f1: 220, f2: 90,  dur: 0.08, wave: 'square',   gain: 0.10 },
-      win:   { f1: 660, f2: 990, dur: 0.16, wave: 'triangle', gain: 0.08 },
-      click: { f1: 420, f2: 300, dur: 0.06, wave: 'sine',     gain: 0.06 },
+      hit:    { f1: 220, f2:  90, dur: 0.08, wave: 'square',   gain: 0.10 },
+      special:{ f1: 520, f2: 180, dur: 0.10, wave: 'triangle', gain: 0.10 },
+      boss:   { f1: 180, f2:  60, dur: 0.14, wave: 'sawtooth', gain: 0.08 },
+      win:    { f1: 660, f2: 990, dur: 0.16, wave: 'triangle', gain: 0.08 },
+      lose:   { f1: 120, f2:  50, dur: 0.20, wave: 'sawtooth', gain: 0.06 },
+      click:  { f1: 420, f2: 300, dur: 0.06, wave: 'sine',     gain: 0.06 },
     }[type] || { f1: 220, f2: 110, dur: 0.08, wave: 'sine', gain: 0.06 };
 
     o.type = settings.wave;
@@ -290,12 +347,13 @@
 
     o.connect(g);
     g.connect(ac.destination);
-
     o.start(t0);
     o.stop(t0 + settings.dur);
   }
 
-  // ---- Canvas sizing
+  // =======================
+  // Canvas sizing
+  // =======================
   function resize() {
     const r = stage.getBoundingClientRect();
     const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
@@ -307,7 +365,11 @@
   }
   window.addEventListener('resize', resize);
 
-  // ---- Levels
+  // =======================
+  // Difficulty curves
+  // =======================
+  function isBossLevel(level) { return level % 3 === 0; }
+
   function ducksForLevel(level) {
     const base = 4;
     const growth = Math.floor(Math.pow(level, 0.85) * 2.2);
@@ -315,13 +377,199 @@
   }
 
   function speedForLevel(level) {
-    return clamp(0.55 + level * 0.045, 0.55, 2.0);
+    return clamp(0.55 + level * 0.045, 0.55, 2.1);
   }
 
-  function spawnLevel(level) {
+  function timeForLevel(level) {
+    // Normal levels: start generous, gently shrink
+    // L1 ~ 26s, L10 ~ 20s, L25 ~ 16s, min 12s
+    const t = 28 - Math.pow(level, 0.65) * 2.2;
+    return clamp(t, 12, 32);
+  }
+
+  function bossHPForLevel(level) {
+    const bossIndex = Math.floor(level / 3); // 1 at level 3
+    const hp = 8 + (bossIndex - 1) * 3;
+    return clamp(hp, 8, 25);
+  }
+
+  function bossTimeForLevel(level) {
+    // Boss rounds a bit tighter (pressure!)
+    // L3 ~ 22s, later ~ 18s, min 14s
+    const t = 24 - Math.pow(level, 0.55) * 1.6;
+    return clamp(t, 14, 26);
+  }
+
+  // =======================
+  // HUD / overlay / toast
+  // =======================
+  function setOverlay(html) { overlay.innerHTML = html; }
+  function hideOverlay() { setOverlay(''); }
+
+  let toastTimer = null;
+  function showToast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastEl.classList.remove('show'), 1500);
+  }
+
+  function updateHUD() {
+    levelLabel.textContent = String(state.level);
+    ducksLeftLabel.textContent = String(state.ducks.filter(d => d.alive).length);
+    scoreLabel.textContent = String(state.score);
+
+    timeLabel.textContent = fmtTime(state.timeLeft);
+    const danger = state.timeLeft <= 5;
+    timePill.classList.toggle('danger', danger);
+
+    const tpLeft = state.tpReadyAt - now()/1000;
+    if (tpLeft <= 0) tpLabel.textContent = 'Ready';
+    else tpLabel.textContent = `${tpLeft.toFixed(1)}s`;
+
+    if (state.boss) {
+      bossPill.style.display = '';
+      bossLabel.textContent = bossHearts(state.boss.hp, state.boss.hpMax);
+    } else {
+      bossPill.style.display = 'none';
+    }
+  }
+
+  function bossHearts(hp, hpMax) {
+    // compress into hearts: each heart = 2 HP
+    const heartsMax = Math.ceil(hpMax / 2);
+    const hearts = Math.ceil(hp / 2);
+    let s = '';
+    for (let i=0;i<heartsMax;i++) s += (i < hearts) ? '❤️' : '🤍';
+    return s;
+  }
+
+  function showStartScreen() {
+    setOverlay(`
+      <div class="card">
+        <h2>Heather’s Duck Game 🪠🦆</h2>
+        <p>
+          Click/tap ducks to <strong>BONK</strong> them.
+          Double-tap to launch the 🧻 TP Roll and <strong>BOINK</strong> something into submission.
+          Every 3 levels… a boss duck shows up with attitude. 🥊🦆
+        </p>
+        <div class="row">
+          <button class="btn primary" id="startBtn">Start</button>
+          <button class="btn" id="howBtn">How to play</button>
+        </div>
+      </div>
+    `);
+    document.getElementById('startBtn').onclick = () => { beep('click'); startGame(); };
+    document.getElementById('howBtn').onclick = () => {
+      beep('click');
+      showToast('BONK 🪠 | BOINK 🧻 | Space pause | R reset | M mute ⏱️');
+    };
+  }
+
+  function showPauseScreen() {
+    setOverlay(`
+      <div class="card">
+        <h2>Paused ⏸️</h2>
+        <p>The ducks are still doing duck math, but time is frozen. 😌</p>
+        <div class="row">
+          <button class="btn primary" id="resumeBtn">Resume</button>
+          <button class="btn danger" id="resetBtn2">Reset</button>
+        </div>
+      </div>
+    `);
+    document.getElementById('resumeBtn').onclick = () => togglePause(false);
+    document.getElementById('resetBtn2').onclick = () => resetGame();
+  }
+
+  function showLoseScreen(reason) {
+    const remain = state.boss ? `Boss HP remaining: ${state.boss.hp}` :
+      `Ducks remaining: ${state.ducks.filter(d => d.alive).length}`;
+    setOverlay(`
+      <div class="card">
+        <h2>YOU GOT DUCKED 😵‍💫🦆</h2>
+        <p>${reason}<br/><strong>${remain}</strong></p>
+        <div class="row">
+          <button class="btn primary" id="retryBtn">Replay level</button>
+          <button class="btn danger" id="resetBtn3">Reset run</button>
+        </div>
+      </div>
+    `);
+    document.getElementById('retryBtn').onclick = () => { beep('click'); resumeLevel(state.level, true); };
+    document.getElementById('resetBtn3').onclick = () => resetGame();
+  }
+
+  function showBossIntro(level, hp) {
+    setOverlay(`
+      <div class="card">
+        <h2>BOSS DUCK INCOMING!! 🦆💢</h2>
+        <p>
+          Level ${level} is a boss fight.<br/>
+          Hit the boss <strong>${hp}</strong> times before time runs out ⏱️<br/>
+          (Double-tap 🧻 does extra damage… because toilet paper is apparently a weapon now.)
+        </p>
+        <div class="row">
+          <button class="btn primary" id="fightBtn">FIGHT!</button>
+        </div>
+      </div>
+    `);
+    document.getElementById('fightBtn').onclick = () => {
+      beep('click');
+      hideOverlay();
+      state.paused = false;
+      state.lastT = now();
+      requestAnimationFrame(loop);
+    };
+  }
+
+  // =======================
+  // Effects / juice
+  // =======================
+  function addRipple(x, y, power=1) {
+    state.ripples.push({ x, y, r: 6, a: 0.55 * power, w: 1.6 + power * 0.6 });
+  }
+
+  function addPlungeBurst(x, y, extra=0) {
+    const n = 10 + (Math.random() * 8 | 0) + extra;
+    for (let i = 0; i < n; i++) {
+      const ang = rand(0, Math.PI * 2);
+      const sp = rand(90, 260);
+      state.particles.push({
+        x, y,
+        vx: Math.cos(ang) * sp,
+        vy: Math.sin(ang) * sp,
+        r: rand(2, 4.8),
+        life: rand(0.25, 0.55),
+        t: 0,
+      });
+    }
+  }
+
+  function addFloatText(x, y, text, kind='hit') {
+    state.floatTexts.push({
+      x, y,
+      vx: rand(-15, 15),
+      vy: rand(-55, -85),
+      t: 0,
+      life: 0.65,
+      text,
+      kind
+    });
+  }
+
+  function shake(mag=3.5) {
+    state.shakeT = 0.18;
+    state.shakeMag = Math.max(state.shakeMag, mag);
+  }
+
+  // =======================
+  // Spawning / level start
+  // =======================
+  function spawnNormalLevel(level) {
+    state.boss = null;
     state.ducks = [];
     state.particles = [];
     state.ripples = [];
+    state.floatTexts = [];
 
     const count = ducksForLevel(level);
     const speedScale = speedForLevel(level);
@@ -330,7 +578,7 @@
     const h = stage.clientHeight;
     const pad = state.lakePadding;
 
-    const maxAttempts = 2000;
+    const maxAttempts = 2200;
     let attempts = 0;
 
     while (state.ducks.length < count && attempts < maxAttempts) {
@@ -338,7 +586,6 @@
       const r = state.baseDuckRadius + rand(-state.duckRadiusJitter, state.duckRadiusJitter);
       const x = rand(pad + r, w - pad - r);
       const y = rand(pad + r, h - pad - r);
-
       const ok = state.ducks.every(d => Math.hypot(d.x - x, d.y - y) > (d.r + r) * 0.85);
       if (!ok) continue;
 
@@ -355,87 +602,81 @@
       });
     }
 
+    state.levelTime = timeForLevel(level);
+    state.timeLeft = state.levelTime;
+
     updateHUD();
-    showToast(`Level ${level}: ${count} duck${count === 1 ? '' : 's'} in the lake. Bring the 🪠.`);
+    showToast(`Level ${level}: ${count} ducks. Timer is judging you ⏱️🦆`);
   }
 
-  // ---- HUD/Overlay/Toast
-  function updateHUD() {
-    levelLabel.textContent = String(state.level);
-    ducksLeftLabel.textContent = String(state.ducks.filter(d => d.alive).length);
-    scoreLabel.textContent = String(state.score);
-  }
+  function spawnBossLevel(level) {
+    state.ducks = [];
+    state.particles = [];
+    state.ripples = [];
+    state.floatTexts = [];
 
-  let toastTimer = null;
-  function showToast(msg) {
-    toastEl.textContent = msg;
-    toastEl.classList.add('show');
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => toastEl.classList.remove('show'), 1600);
-  }
+    const hp = bossHPForLevel(level);
+    const w = stage.clientWidth;
+    const h = stage.clientHeight;
+    const pad = state.lakePadding;
 
-  const setOverlay = (html) => { overlay.innerHTML = html; };
-  const hideOverlay = () => setOverlay('');
+    // Boss starts near center
+    state.boss = {
+      x: w * 0.5,
+      y: h * 0.52,
+      r: 72,
+      vx: 0,
+      vy: 0,
+      bob: rand(0, Math.PI * 2),
+      hue: 48,
 
-  function showStartScreen() {
-    setOverlay(`
-      <div class="card">
-        <h2>Heather’s Duck Game 🪠🦆</h2>
-        <p>
-          Tap ducks to plunger-bop them. Clear the lake to level up.
-          Ducks get more numerous (and a little more zippy) each round.
-        </p>
-        <div class="row">
-          <button class="btn primary" id="startBtn">Start</button>
-          <button class="btn" id="howBtn">How to play</button>
-        </div>
-      </div>
-    `);
+      hpMax: hp,
+      hp: hp,
 
-    document.getElementById('startBtn').onclick = () => { beep('click'); startGame(); };
-    document.getElementById('howBtn').onclick = () => {
-      beep('click');
-      showToast('Click/tap ducks. Space = pause. R = reset. M = mute. 🪠');
+      // punch-out-ish state machine
+      mode: 'idle',      // idle -> telegraph -> charge -> stun -> idle ...
+      tMode: 0,
+      telegraphDur: 0.85,
+      chargeDur: 0.65,
+      stunDur: 0.55,
+
+      // target direction for charge
+      cx: w * 0.5,
+      cy: h * 0.5,
     };
+
+    state.levelTime = bossTimeForLevel(level);
+    state.timeLeft = state.levelTime;
+
+    updateHUD();
+    showBossIntro(level, hp);
+    showToast(`Boss duck loaded. Violence is now a plunger sport 🥊🪠`);
   }
 
-  function showPauseScreen() {
-    setOverlay(`
-      <div class="card">
-        <h2>Paused</h2>
-        <p>Take a breath. The ducks are still plotting.</p>
-        <div class="row">
-          <button class="btn primary" id="resumeBtn">Resume</button>
-          <button class="btn danger" id="resetBtn2">Reset</button>
-        </div>
-      </div>
-    `);
-    document.getElementById('resumeBtn').onclick = () => togglePause(false);
-    document.getElementById('resetBtn2').onclick = () => resetGame();
-  }
+  function resumeLevel(level, replay=false) {
+    state.paused = false;
+    state.running = true;
 
-  // ---- Effects
-  function addRipple(x, y, power=1) {
-    state.ripples.push({ x, y, r: 6, a: 0.55 * power, w: 1.6 + power * 0.6 });
-  }
+    // preserve score on replay (your call). We'll preserve to keep momentum.
+    // reset cooldown to avoid immediate spam
+    state.tpReadyAt = now()/1000 + 0.6;
 
-  function addPlungeBurst(x, y) {
-    const n = 10 + (Math.random() * 6 | 0);
-    for (let i = 0; i < n; i++) {
-      const ang = rand(0, Math.PI * 2);
-      const sp = rand(80, 200);
-      state.particles.push({
-        x, y,
-        vx: Math.cos(ang) * sp,
-        vy: Math.sin(ang) * sp,
-        r: rand(2, 4.2),
-        life: rand(0.25, 0.45),
-        t: 0,
-      });
+    if (isBossLevel(level)) spawnBossLevel(level);
+    else spawnNormalLevel(level);
+
+    if (!isBossLevel(level)) {
+      hideOverlay();
+      state.lastT = now();
+      requestAnimationFrame(loop);
+    } else {
+      // Boss intro overlay remains until "FIGHT!"
+      state.paused = true;
     }
   }
 
-  // ---- Input
+  // =======================
+  // Input (single tap vs double tap)
+  // =======================
   function stagePointFromEvent(e) {
     const r = stage.getBoundingClientRect();
     const clientX = (e.touches && e.touches[0]) ? e.touches[0].clientX : e.clientX;
@@ -443,27 +684,56 @@
     return { x: clientX - r.left, y: clientY - r.top };
   }
 
-  function tryHit(x, y) {
+  function tpReady() { return (now()/1000) >= state.tpReadyAt; }
+
+  function spendTP() {
+    state.tpReadyAt = now()/1000 + state.tpCooldown;
+  }
+
+  // Standard hit (BONK)
+  function attemptBonk(x, y) {
     if (!state.running || state.paused) return;
 
+    addRipple(x, y, 1);
+
+    // If boss exists, prefer boss hit first
+    if (state.boss) {
+      const b = state.boss;
+      const dist = Math.hypot(b.x - x, b.y - y);
+
+      // During charge: boss is “dodgy” (smaller hitbox)
+      const hitMul = (b.mode === 'charge') ? 0.75 : 1.0;
+      if (dist <= b.r * hitMul) {
+        bossTakeDamage(1, x, y, 'BONK!');
+        return;
+      }
+      // miss
+      state.score = Math.max(0, state.score - 1);
+      updateHUD();
+      return;
+    }
+
+    // Normal ducks
     let best = null;
     let bestD = Infinity;
-
     for (const d of state.ducks) {
       if (!d.alive) continue;
       const dist = Math.hypot(d.x - x, d.y - y);
       if (dist <= d.r && dist < bestD) { bestD = dist; best = d; }
     }
 
-    addRipple(x, y, 1);
-
     if (best) {
       best.alive = false;
-      state.score += Math.max(5, Math.floor(25 - bestD));
+      const gained = Math.max(5, Math.floor(25 - bestD));
+      state.score += gained;
+
       beep('hit');
-      addPlungeBurst(best.x, best.y);
+      shake(2.8);
+      addPlungeBurst(best.x, best.y, 4);
       addRipple(best.x, best.y, 1.4);
-      showToast('🪠 BONK!');
+      addFloatText(best.x, best.y - best.r, 'BONK!', 'hit');
+      showToast(`BONK! 🪠 +${gained}`);
+
       updateHUD();
 
       if (state.ducks.every(d => !d.alive)) levelComplete();
@@ -473,18 +743,132 @@
     }
   }
 
+  // Special (TP Roll) hit (BOINK)
+  function attemptTPRoll(x, y) {
+    if (!state.running || state.paused) return;
+    if (!tpReady()) {
+      showToast('🧻 TP reloading... patience, warrior.');
+      return;
+    }
+    spendTP();
+
+    addRipple(x, y, 1.2);
+
+    // special prefers boss if present
+    if (state.boss) {
+      const b = state.boss;
+      const dist = Math.hypot(b.x - x, b.y - y);
+      // bigger range for special
+      if (dist <= b.r * 1.15) {
+        bossTakeDamage(2, x, y, 'BOINK!');
+        // goofy “wrap” burst
+        addFloatText(b.x, b.y - b.r, '🧻💫', 'special');
+        return;
+      }
+      // if special misses boss, still does something silly
+      addFloatText(x, y, '🧻 whiff...', 'special');
+      beep('special');
+      updateHUD();
+      return;
+    }
+
+    // normal: find nearest duck within generous radius
+    let best = null;
+    let bestD = Infinity;
+    for (const d of state.ducks) {
+      if (!d.alive) continue;
+      const dist = Math.hypot(d.x - x, d.y - y);
+      if (dist <= d.r * 1.35 && dist < bestD) { bestD = dist; best = d; }
+    }
+
+    beep('special');
+    shake(3.8);
+
+    if (best) {
+      best.alive = false;
+      const gained = 18;
+      state.score += gained;
+
+      addPlungeBurst(best.x, best.y, 10);
+      addRipple(best.x, best.y, 1.8);
+      addFloatText(best.x, best.y - best.r, 'BOINK!', 'special');
+      addFloatText(best.x, best.y - best.r*0.35, '🧻🌀', 'special');
+      showToast(`BOINK! 🧻 +${gained} (captured in 4-ply)`);
+      updateHUD();
+      if (state.ducks.every(d => !d.alive)) levelComplete();
+    } else {
+      addFloatText(x, y, '🧻 NOPE', 'special');
+      showToast('BOINK! 🧻 (hit nothing but vibes)');
+      updateHUD();
+    }
+  }
+
+  function bossTakeDamage(dmg, x, y, word) {
+    const b = state.boss;
+    b.hp = Math.max(0, b.hp - dmg);
+
+    state.score += dmg === 2 ? 25 : 12;
+    beep('boss');
+    shake(dmg === 2 ? 5.0 : 3.6);
+
+    addPlungeBurst(b.x, b.y, dmg === 2 ? 18 : 10);
+    addRipple(b.x, b.y + b.r*0.35, dmg === 2 ? 2.0 : 1.5);
+    addFloatText(b.x + rand(-10,10), b.y - b.r, word, dmg === 2 ? 'special' : 'hit');
+
+    // little stun if special
+    if (dmg === 2) {
+      b.mode = 'stun';
+      b.tMode = 0;
+    }
+
+    updateHUD();
+
+    if (b.hp <= 0) bossDefeated();
+  }
+
+  // pointer listeners
   stage.addEventListener('pointerdown', (e) => {
     e.preventDefault();
     stage.setPointerCapture?.(e.pointerId);
     const p = stagePointFromEvent(e);
     state.pointer = { x: p.x, y: p.y, down: true };
-    tryHit(p.x, p.y);
   });
   stage.addEventListener('pointermove', (e) => {
     const p = stagePointFromEvent(e);
-    state.pointer.x = p.x; state.pointer.y = p.y;
+    state.pointer.x = p.x;
+    state.pointer.y = p.y;
   });
   stage.addEventListener('pointerup', () => { state.pointer.down = false; });
+
+  // click vs dblclick (desktop)
+  stage.addEventListener('click', (e) => {
+    const p = stagePointFromEvent(e);
+    attemptBonk(p.x, p.y);
+  });
+  stage.addEventListener('dblclick', (e) => {
+    e.preventDefault();
+    const p = stagePointFromEvent(e);
+    attemptTPRoll(p.x, p.y);
+  });
+
+  // double-tap (mobile) fallback: if two pointerdowns happen quickly near each other, trigger special
+  let lastTapT = 0;
+  let lastTapX = 0;
+  let lastTapY = 0;
+  stage.addEventListener('pointerdown', (e) => {
+    const p = stagePointFromEvent(e);
+    const t = now();
+    const dt = t - lastTapT;
+    const dist = Math.hypot(p.x - lastTapX, p.y - lastTapY);
+    if (dt < 260 && dist < 26) {
+      attemptTPRoll(p.x, p.y);
+      lastTapT = 0;
+    } else {
+      lastTapT = t;
+      lastTapX = p.x;
+      lastTapY = p.y;
+    }
+  });
 
   window.addEventListener('keydown', (e) => {
     const k = e.key.toLowerCase();
@@ -499,21 +883,22 @@
   function toggleMute() {
     state.muted = !state.muted;
     muteBtn.textContent = state.muted ? '🔇 Muted' : '🔊 Sound';
-    showToast(state.muted ? 'Muted.' : 'Sound on.');
+    showToast(state.muted ? 'Muted. Shhh, ducks.' : 'Sound on. Let the BONK be heard.');
     if (!state.muted) ensureAudio();
   }
 
-  // ---- Game Flow
+  // =======================
+  // Game flow
+  // =======================
   function startGame() {
     state.level = 1;
     state.score = 0;
     state.running = true;
     state.paused = false;
+    state.tpReadyAt = now()/1000;
+
     resize();
-    spawnLevel(state.level);
-    hideOverlay();
-    state.lastT = now();
-    requestAnimationFrame(loop);
+    resumeLevel(state.level);
   }
 
   function resetGame() {
@@ -522,9 +907,13 @@
     state.paused = false;
     state.level = 1;
     state.score = 0;
+    state.timeLeft = 0;
+    state.levelTime = 0;
     state.ducks = [];
+    state.boss = null;
     state.particles = [];
     state.ripples = [];
+    state.floatTexts = [];
     updateHUD();
     showStartScreen();
   }
@@ -539,14 +928,14 @@
   function levelComplete() {
     state.paused = true;
     beep('win');
-    const bonus = 50 + state.level * 10;
+    const bonus = Math.floor(60 + state.level * 10 + state.timeLeft * 2);
     state.score += bonus;
     updateHUD();
 
     setOverlay(`
       <div class="card">
-        <h2>Lake Cleared ✅</h2>
-        <p>Level ${state.level} complete. Bonus <strong style="color: var(--ok)">${bonus}</strong>.</p>
+        <h2>Lake Cleared ✅🦆✨</h2>
+        <p>Level ${state.level} complete! Bonus <strong style="color: var(--ok)">${bonus}</strong>.<br/>Next level gets spicier 🌶️</p>
         <div class="row">
           <button class="btn primary" id="nextBtn">Next level</button>
           <button class="btn" id="replayBtn">Replay</button>
@@ -557,32 +946,68 @@
     document.getElementById('nextBtn').onclick = () => {
       beep('click');
       state.level += 1;
-      state.paused = false;
-      spawnLevel(state.level);
-      hideOverlay();
-      state.lastT = now();
-      requestAnimationFrame(loop);
+      resumeLevel(state.level);
     };
-
     document.getElementById('replayBtn').onclick = () => {
       beep('click');
-      state.paused = false;
-      spawnLevel(state.level);
-      hideOverlay();
-      state.lastT = now();
-      requestAnimationFrame(loop);
+      resumeLevel(state.level, true);
     };
   }
 
-  // ---- Update/Render
+  function bossDefeated() {
+    state.paused = true;
+    beep('win');
+    const bonus = Math.floor(150 + state.level * 25 + state.timeLeft * 3);
+    state.score += bonus;
+    updateHUD();
+
+    setOverlay(`
+      <div class="card">
+        <h2>BOSS DUCK DEFEATED!! 🥊🦆💥</h2>
+        <p>That duck is going to therapy about you.<br/>Bonus <strong style="color: var(--ok)">${bonus}</strong> 🪙</p>
+        <div class="row">
+          <button class="btn primary" id="nextBtn">Next level</button>
+          <button class="btn" id="replayBtn">Replay boss</button>
+        </div>
+      </div>
+    `);
+
+    document.getElementById('nextBtn').onclick = () => {
+      beep('click');
+      state.level += 1;
+      resumeLevel(state.level);
+    };
+    document.getElementById('replayBtn').onclick = () => {
+      beep('click');
+      resumeLevel(state.level, true);
+    };
+  }
+
+  // =======================
+  // Update step
+  // =======================
   function update(dt) {
     const w = stage.clientWidth;
     const h = stage.clientHeight;
     const pad = state.lakePadding;
 
+    // timer
+    state.timeLeft -= dt;
+    if (state.timeLeft <= 0) {
+      state.timeLeft = 0;
+      state.paused = true;
+      beep('lose');
+      updateHUD();
+      showLoseScreen("Time’s up ⏱️ The lake has declared victory.");
+      return;
+    }
+
+    // boss logic
+    if (state.boss) updateBoss(dt, w, h, pad);
+
+    // ducks
     for (const d of state.ducks) {
       if (!d.alive) continue;
-
       d.bob += dt * 2.4;
       d.x += d.vx * dt;
       d.y += d.vy * dt;
@@ -595,7 +1020,9 @@
       if (d.y < minY) { d.y = minY; d.vy = Math.abs(d.vy); addRipple(d.x, d.y, 0.7); }
       if (d.y > maxY) { d.y = maxY; d.vy = -Math.abs(d.vy); addRipple(d.x, d.y, 0.7); }
 
-      const turn = rand(-1, 1) * dt * 0.65;
+      // wandering increases slightly with level
+      const wobble = clamp(0.65 + state.level * 0.01, 0.65, 1.0);
+      const turn = rand(-1, 1) * dt * wobble;
       const cos = Math.cos(turn), sin = Math.sin(turn);
       const nvx = d.vx * cos - d.vy * sin;
       const nvy = d.vx * sin + d.vy * cos;
@@ -603,14 +1030,12 @@
 
       const sp = Math.hypot(d.vx, d.vy);
       const spMax = 220;
-      if (sp > spMax) {
-        d.vx = (d.vx / sp) * spMax;
-        d.vy = (d.vy / sp) * spMax;
-      }
+      if (sp > spMax) { d.vx = (d.vx / sp) * spMax; d.vy = (d.vy / sp) * spMax; }
 
       if (Math.random() < dt * 0.35) addRipple(d.x, d.y + d.r*0.45, 0.35);
     }
 
+    // particles
     for (let i = state.particles.length - 1; i >= 0; i--) {
       const p = state.particles[i];
       p.t += dt;
@@ -622,20 +1047,126 @@
       if (k >= 1) state.particles.splice(i, 1);
     }
 
+    // ripples
     for (let i = state.ripples.length - 1; i >= 0; i--) {
       const r = state.ripples[i];
       r.r += dt * 120;
       r.a -= dt * 0.95;
       if (r.a <= 0) state.ripples.splice(i, 1);
     }
+
+    // float texts
+    for (let i = state.floatTexts.length - 1; i >= 0; i--) {
+      const ft = state.floatTexts[i];
+      ft.t += dt;
+      ft.x += ft.vx * dt;
+      ft.y += ft.vy * dt;
+      ft.vy += dt * 60;
+      if (ft.t >= ft.life) state.floatTexts.splice(i, 1);
+    }
+
+    // shake decay
+    state.shakeT = Math.max(0, state.shakeT - dt);
+    state.shakeMag *= (1 - dt * 6);
+
+    updateHUD();
   }
 
+  function updateBoss(dt, w, h, pad) {
+    const b = state.boss;
+    b.bob += dt * 2.0;
+    b.tMode += dt;
+
+    const minX = pad + b.r, maxX = w - pad - b.r;
+    const minY = pad + b.r, maxY = h - pad - b.r;
+
+    if (b.mode === 'idle') {
+      // slow drift
+      const sp = 40 + state.level * 2.0;
+      const ang = rand(0, Math.PI*2);
+      b.vx += Math.cos(ang) * dt * 40;
+      b.vy += Math.sin(ang) * dt * 40;
+      const cur = Math.hypot(b.vx, b.vy);
+      const cap = clamp(sp, 40, 85);
+      if (cur > cap) { b.vx = (b.vx/cur)*cap; b.vy = (b.vy/cur)*cap; }
+
+      // occasionally switch to telegraph
+      if (b.tMode > rand(1.1, 1.8)) {
+        b.mode = 'telegraph';
+        b.tMode = 0;
+        b.telegraphDur = rand(0.65, 0.95);
+
+        // pick a charge target point
+        b.cx = rand(minX, maxX);
+        b.cy = rand(minY, maxY);
+        showToast('Boss is winding up… 🦆💢');
+      }
+    }
+    else if (b.mode === 'telegraph') {
+      // slow down a little
+      b.vx *= (1 - dt*3);
+      b.vy *= (1 - dt*3);
+
+      if (b.tMode >= b.telegraphDur) {
+        b.mode = 'charge';
+        b.tMode = 0;
+        b.chargeDur = rand(0.55, 0.85);
+
+        // dash toward target
+        const dx = b.cx - b.x;
+        const dy = b.cy - b.y;
+        const d = Math.max(1, Math.hypot(dx, dy));
+        const dash = clamp(380 + state.level * 10, 380, 520);
+        b.vx = (dx / d) * dash;
+        b.vy = (dy / d) * dash;
+
+        showToast('CHARGE!! 🦆💨');
+      }
+    }
+    else if (b.mode === 'charge') {
+      if (b.tMode >= b.chargeDur) {
+        b.mode = 'stun';
+        b.tMode = 0;
+        b.stunDur = rand(0.45, 0.70);
+        b.vx *= 0.25;
+        b.vy *= 0.25;
+        showToast('Boss is dizzy… BONK opportunity! 😵‍💫');
+      }
+    }
+    else if (b.mode === 'stun') {
+      // mostly still
+      b.vx *= (1 - dt*4);
+      b.vy *= (1 - dt*4);
+      if (b.tMode >= b.stunDur) {
+        b.mode = 'idle';
+        b.tMode = 0;
+      }
+    }
+
+    // move
+    b.x += b.vx * dt;
+    b.y += b.vy * dt;
+
+    // bounds bounce
+    if (b.x < minX) { b.x = minX; b.vx = Math.abs(b.vx); addRipple(b.x, b.y, 0.9); }
+    if (b.x > maxX) { b.x = maxX; b.vx = -Math.abs(b.vx); addRipple(b.x, b.y, 0.9); }
+    if (b.y < minY) { b.y = minY; b.vy = Math.abs(b.vy); addRipple(b.x, b.y, 0.9); }
+    if (b.y > maxY) { b.y = maxY; b.vy = -Math.abs(b.vy); addRipple(b.x, b.y, 0.9); }
+
+    // occasional water splash while charging
+    if (b.mode === 'charge' && Math.random() < dt * 1.8) addRipple(b.x, b.y + b.r*0.35, 0.7);
+  }
+
+  // =======================
+  // Rendering
+  // =======================
   function drawDuck(d) {
     const bob = Math.sin(d.bob) * 2.0;
 
     ctx.save();
     ctx.translate(d.x, d.y + bob);
 
+    // shadow
     ctx.globalAlpha = 0.18;
     ctx.fillStyle = '#000';
     ctx.beginPath();
@@ -643,6 +1174,7 @@
     ctx.fill();
     ctx.globalAlpha = 1;
 
+    // body
     ctx.fillStyle = `hsl(${d.hue} 95% 58%)`;
     ctx.strokeStyle = 'rgba(0,0,0,.25)';
     ctx.lineWidth = 2;
@@ -652,11 +1184,13 @@
     ctx.fill();
     ctx.stroke();
 
+    // head
     ctx.beginPath();
     ctx.ellipse(d.r*0.62, -d.r*0.28, d.r*0.45, d.r*0.42, 0, 0, Math.PI*2);
     ctx.fill();
     ctx.stroke();
 
+    // beak
     ctx.fillStyle = 'hsl(28 92% 56%)';
     ctx.beginPath();
     ctx.moveTo(d.r*1.15, -d.r*0.22);
@@ -665,16 +1199,17 @@
     ctx.fill();
     ctx.stroke();
 
+    // eye
     ctx.fillStyle = 'rgba(0,0,0,.75)';
     ctx.beginPath();
     ctx.arc(d.r*0.74, -d.r*0.38, Math.max(2.2, d.r*0.07), 0, Math.PI*2);
     ctx.fill();
-
     ctx.fillStyle = 'rgba(255,255,255,.8)';
     ctx.beginPath();
     ctx.arc(d.r*0.78, -d.r*0.42, Math.max(1.2, d.r*0.03), 0, Math.PI*2);
     ctx.fill();
 
+    // float ring
     ctx.globalAlpha = 0.35;
     ctx.strokeStyle = 'rgba(255,255,255,.35)';
     ctx.lineWidth = 2;
@@ -682,6 +1217,90 @@
     ctx.ellipse(0, d.r*0.58, d.r*1.05, d.r*0.45, 0, 0, Math.PI*2);
     ctx.stroke();
     ctx.globalAlpha = 1;
+
+    ctx.restore();
+  }
+
+  function drawBoss(b) {
+    const bob = Math.sin(b.bob) * 2.5;
+
+    ctx.save();
+    ctx.translate(b.x, b.y + bob);
+
+    // telegraph pulse
+    const pulse = (b.mode === 'telegraph') ? (0.5 + 0.5*Math.sin(b.tMode*10)) : 0;
+    const chargeGlow = (b.mode === 'charge') ? 0.5 : 0;
+
+    // shadow
+    ctx.globalAlpha = 0.22;
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.ellipse(0, b.r*0.60, b.r*0.92, b.r*0.38, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // aura for telegraph/charge
+    if (pulse > 0 || chargeGlow > 0) {
+      ctx.globalAlpha = 0.22 + pulse*0.28 + chargeGlow*0.18;
+      ctx.strokeStyle = `rgba(255,74,110,0.8)`;
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, b.r*1.05, b.r*0.85, 0, 0, Math.PI*2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
+    // body
+    ctx.fillStyle = `hsl(${b.hue} 95% 55%)`;
+    ctx.strokeStyle = 'rgba(0,0,0,.28)';
+    ctx.lineWidth = 3;
+
+    ctx.beginPath();
+    ctx.ellipse(0, 0, b.r*0.95, b.r*0.78, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.stroke();
+
+    // head
+    ctx.beginPath();
+    ctx.ellipse(b.r*0.62, -b.r*0.22, b.r*0.52, b.r*0.50, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.stroke();
+
+    // angry brow
+    ctx.strokeStyle = 'rgba(0,0,0,.65)';
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.moveTo(b.r*0.45, -b.r*0.55);
+    ctx.lineTo(b.r*0.92, -b.r*0.45);
+    ctx.stroke();
+
+    // beak
+    ctx.fillStyle = 'hsl(28 92% 54%)';
+    ctx.strokeStyle = 'rgba(0,0,0,.28)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(b.r*1.20, -b.r*0.20);
+    ctx.quadraticCurveTo(b.r*1.55, -b.r*0.05, b.r*1.18, b.r*0.05);
+    ctx.quadraticCurveTo(b.r*1.04, -b.r*0.10, b.r*1.20, -b.r*0.20);
+    ctx.fill();
+    ctx.stroke();
+
+    // eye
+    ctx.fillStyle = 'rgba(0,0,0,.82)';
+    ctx.beginPath();
+    ctx.arc(b.r*0.80, -b.r*0.42, Math.max(3.2, b.r*0.07), 0, Math.PI*2);
+    ctx.fill();
+
+    // stun stars
+    if (b.mode === 'stun') {
+      ctx.globalAlpha = 0.9;
+      ctx.font = `bold ${Math.max(14, b.r*0.22)}px system-ui`;
+      ctx.fillStyle = 'rgba(255,255,255,.9)';
+      ctx.fillText('⭐️', -b.r*0.55, -b.r*0.85);
+      ctx.fillText('⭐️', -b.r*0.15, -b.r*1.00);
+      ctx.fillText('⭐️', b.r*0.25, -b.r*0.88);
+      ctx.globalAlpha = 1;
+    }
 
     ctx.restore();
   }
@@ -699,58 +1318,59 @@
 
     // handle
     ctx.beginPath();
-    ctx.roundRect(-4, -42, 8, 44, 4);
+    roundRect(ctx, -4, -42, 8, 44, 4);
     ctx.fill();
     ctx.stroke();
 
     // cup
     ctx.fillStyle = 'hsl(350 85% 55%)';
     ctx.beginPath();
-    ctx.roundRect(-22, -6, 44, 18, 10);
-    ctx.fill();
-    ctx.stroke();
+    roundRect(ctx, -22, -6, 44, 18, 10);
+    ctx.fill(); ctx.stroke();
 
     ctx.beginPath();
-    ctx.roundRect(-28, 6, 56, 14, 12);
-    ctx.fill();
-    ctx.stroke();
+    roundRect(ctx, -28, 6, 56, 14, 12);
+    ctx.fill(); ctx.stroke();
 
     ctx.globalAlpha = 0.25;
     ctx.fillStyle = '#fff';
     ctx.beginPath();
-    ctx.roundRect(-18, -2, 10, 8, 6);
+    roundRect(ctx, -18, -2, 10, 8, 6);
     ctx.fill();
     ctx.globalAlpha = 1;
 
     ctx.restore();
   }
 
-  // roundRect fallback
-  if (!CanvasRenderingContext2D.prototype.roundRect) {
-    CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, r) {
-      const rr = Array.isArray(r) ? r : [r, r, r, r];
-      const [r1, r2, r3, r4] = rr.map(v => Math.max(0, Math.min(v, Math.min(w, h) / 2)));
-      this.beginPath();
-      this.moveTo(x + r1, y);
-      this.lineTo(x + w - r2, y);
-      this.quadraticCurveTo(x + w, y, x + w, y + r2);
-      this.lineTo(x + w, y + h - r3);
-      this.quadraticCurveTo(x + w, y + h, x + w - r3, y + h);
-      this.lineTo(x + r4, y + h);
-      this.quadraticCurveTo(x, y + h, x, y + h - r4);
-      this.lineTo(x, y + r1);
-      this.quadraticCurveTo(x, y, x + r1, y);
-      this.closePath();
-      return this;
-    };
+  function roundRect(ctx, x, y, w, h, r) {
+    const rr = Array.isArray(r) ? r : [r, r, r, r];
+    const [r1, r2, r3, r4] = rr.map(v => Math.max(0, Math.min(v, Math.min(w, h) / 2)));
+    ctx.moveTo(x + r1, y);
+    ctx.lineTo(x + w - r2, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r2);
+    ctx.lineTo(x + w, y + h - r3);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r3, y + h);
+    ctx.lineTo(x + r4, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r4);
+    ctx.lineTo(x, y + r1);
+    ctx.quadraticCurveTo(x, y, x + r1, y);
+    ctx.closePath();
   }
 
   function render() {
     const w = stage.clientWidth;
     const h = stage.clientHeight;
 
+    // shake offset
+    const sx = (state.shakeT > 0) ? rand(-state.shakeMag, state.shakeMag) : 0;
+    const sy = (state.shakeT > 0) ? rand(-state.shakeMag, state.shakeMag) : 0;
+
     ctx.clearRect(0, 0, w, h);
 
+    ctx.save();
+    ctx.translate(sx, sy);
+
+    // water sheen
     const g = ctx.createLinearGradient(0, 0, 0, h);
     g.addColorStop(0, 'rgba(255,255,255,.06)');
     g.addColorStop(1, 'rgba(0,0,0,.10)');
@@ -769,6 +1389,9 @@
       ctx.restore();
     }
 
+    // boss
+    if (state.boss) drawBoss(state.boss);
+
     // ducks
     for (const d of state.ducks) {
       if (d.alive) drawDuck(d);
@@ -786,12 +1409,32 @@
       ctx.restore();
     }
 
-    // cursor plunger
+    // float texts (BONK/BOINK)
+    for (const ft of state.floatTexts) {
+      const k = ft.t / ft.life;
+      ctx.save();
+      ctx.globalAlpha = 1 - k;
+      const size = ft.kind === 'special' ? 26 : 22;
+      ctx.font = `900 ${size}px system-ui`;
+      ctx.lineWidth = 6;
+      ctx.strokeStyle = 'rgba(0,0,0,.45)';
+      ctx.fillStyle = ft.kind === 'special' ? 'rgba(255,218,74,.95)' : 'rgba(255,255,255,.95)';
+      ctx.strokeText(ft.text, ft.x, ft.y);
+      ctx.fillText(ft.text, ft.x, ft.y);
+      ctx.restore();
+    }
+
+    // cursor
     if (state.running && !state.paused) {
       drawPlungerCursor(state.pointer.x, state.pointer.y, state.pointer.down);
     }
+
+    ctx.restore();
   }
 
+  // =======================
+  // Loop
+  // =======================
   function loop(t) {
     if (!state.running || state.paused) return;
     const dt = clamp((t - state.lastT) / 1000, 0, 0.033);
@@ -801,6 +1444,9 @@
     requestAnimationFrame(loop);
   }
 
+  // =======================
+  // Boot
+  // =======================
   function boot() {
     resize();
     updateHUD();
@@ -810,7 +1456,7 @@
     state.pointer.x = r.width / 2;
     state.pointer.y = r.height / 2;
 
-    // idle render to keep the background alive while not running
+    // idle render
     const idle = () => {
       if (state.running && !state.paused) return;
       render();
