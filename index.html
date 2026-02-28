@@ -39,7 +39,6 @@
     header .left{ display:flex; align-items:baseline; gap:12px; }
     header h1{ margin:0; font-size:16px; letter-spacing:.2px; }
     header .sub{ opacity:.85; font-size:12px; }
-
     .hud{
       display:flex;
       gap:10px;
@@ -65,30 +64,26 @@
       border-color: rgba(255,74,110,.35);
       background: rgba(255,74,110,.14);
     }
-
     .btn{
       cursor:pointer;
       border:1px solid rgba(255,255,255,.16);
       background: rgba(255,255,255,.12);
       color:var(--text);
       border-radius:12px;
-      padding:8px 10px;
-      font-size:12px;
+      padding:10px 12px;
+      font-size:13px;
       box-shadow: 0 6px 18px var(--shadow);
       transition: transform .08s ease, background .12s ease;
       user-select:none;
     }
     .btn:hover{ background: rgba(255,255,255,.16); }
     .btn:active{ transform: translateY(1px) scale(.99); }
+    .btn.primary{ border-color: rgba(255,218,74,.55); background: rgba(255,218,74,.22); }
     .btn.danger{ border-color: rgba(255,74,110,.45); background: rgba(255,74,110,.18); }
 
-    main{
-      position:relative;
-      display:grid;
-      place-items:center;
-      padding:10px;
-    }
+    main{ position:relative; display:grid; place-items:center; padding:10px; }
 
+    /* Stage wrapper */
     .stage{
       width:min(980px, 96vw);
       aspect-ratio: 16/9;
@@ -104,8 +99,18 @@
       touch-action:none;
     }
 
+    /* Canvas stays below overlay */
+    canvas{
+      position:absolute;
+      inset:0;
+      width:100%;
+      height:100%;
+      z-index: 1;
+    }
+
     .ripples{
       position:absolute; inset:0;
+      z-index: 2;
       background:
         repeating-radial-gradient(circle at 20% 30%, rgba(255,255,255,.06) 0 2px, transparent 2px 18px),
         repeating-radial-gradient(circle at 70% 60%, rgba(255,255,255,.05) 0 2px, transparent 2px 22px);
@@ -119,30 +124,55 @@
       to{ transform: translate3d(-40px, 18px, 0) }
     }
 
+    /* Overlay ALWAYS on top */
     .overlay{
       position:absolute;
       inset:0;
       display:grid;
       place-items:center;
-      pointer-events:auto;
+      z-index: 10;
+      pointer-events:none; /* default pass-through */
     }
-    .overlay:empty{
-      pointer-events:none;
-    }
+    .overlay.active{ pointer-events:auto; }
+
     .card{
-      pointer-events:auto;
       width:min(640px, 92%);
       border-radius:18px;
       padding:16px 16px 14px;
-      background: rgba(0,0,0,.46);
+      background: rgba(0,0,0,.52);
       border:1px solid rgba(255,255,255,.14);
       backdrop-filter: blur(10px);
       box-shadow: 0 16px 50px rgba(0,0,0,.45);
       text-align:center;
+      pointer-events:auto;
     }
     .card h2{ margin:0 0 8px; font-size:18px; letter-spacing:.2px; }
-    .card p{ margin:0 0 12px; opacity:.9; font-size:13px; line-height:1.35; }
+    .card p{ margin:0 0 12px; opacity:.92; font-size:13px; line-height:1.35; }
     .row{ display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
+    .small{ font-size:12px; opacity:.88; }
+
+    .toast{
+      position:absolute;
+      left:50%;
+      bottom:14px;
+      transform: translateX(-50%);
+      z-index: 9;
+      background: rgba(0,0,0,.45);
+      border:1px solid rgba(255,255,255,.14);
+      padding:8px 10px;
+      border-radius:12px;
+      font-size:12px;
+      opacity:0;
+      pointer-events:none;
+      transition: opacity .25s ease, transform .25s ease;
+      box-shadow: 0 12px 34px rgba(0,0,0,.35);
+      max-width:min(720px, 92%);
+      text-align:center;
+    }
+    .toast.show{
+      opacity:1;
+      transform: translateX(-50%) translateY(-4px);
+    }
 
     footer{
       padding:10px 12px;
@@ -162,28 +192,6 @@
       padding:2px 6px;
       font-size:11px;
     }
-
-    .toast{
-      position:absolute;
-      left:50%;
-      bottom:14px;
-      transform: translateX(-50%);
-      background: rgba(0,0,0,.45);
-      border:1px solid rgba(255,255,255,.14);
-      padding:8px 10px;
-      border-radius:12px;
-      font-size:12px;
-      opacity:0;
-      pointer-events:none;
-      transition: opacity .25s ease, transform .25s ease;
-      box-shadow: 0 12px 34px rgba(0,0,0,.35);
-      max-width:min(720px, 92%);
-      text-align:center;
-    }
-    .toast.show{
-      opacity:1;
-      transform: translateX(-50%) translateY(-4px);
-    }
   </style>
 </head>
 
@@ -192,17 +200,17 @@
     <header>
       <div class="left">
         <h1>Heather’s Duck Game 🪠🦆</h1>
-        <div class="sub">BONK ducks, BOINK bosses, survive the timer ⏱️</div>
+        <div class="sub">BONK ducks, BOINK bosses, beat the clock ⏱️</div>
       </div>
       <div class="hud">
         <div class="pill">Level <strong id="levelLabel">1</strong></div>
-        <div class="pill">Ducks <strong id="ducksLeftLabel">0</strong></div>
+        <div class="pill">Targets <strong id="targetsLabel">0</strong></div>
         <div class="pill">Score <strong id="scoreLabel">0</strong></div>
         <div class="pill" id="timePill">Time <strong id="timeLabel">0:00</strong></div>
         <div class="pill">🧻 TP <strong id="tpLabel">Ready</strong></div>
         <div class="pill" id="bossPill" style="display:none;">BOSS <strong id="bossLabel">❤️</strong></div>
-        <button class="btn" id="muteBtn" aria-label="Toggle sound">🔊 Sound</button>
-        <button class="btn danger" id="resetBtn">Reset</button>
+        <button class="btn" id="muteBtn" type="button">🔊 Sound</button>
+        <button class="btn danger" id="resetBtn" type="button">Reset</button>
       </div>
     </header>
 
@@ -220,7 +228,7 @@
         Controls: click/tap 🪠 | double-tap 🧻 | <kbd>Space</kbd> pause | <kbd>R</kbd> reset | <kbd>M</kbd> mute
       </div>
       <div>
-        Boss rounds every 3 levels. Don’t get splashed 😤🦆
+        Boss every 3 levels 🥊🦆
       </div>
     </footer>
   </div>
@@ -229,17 +237,7 @@
 (() => {
   'use strict';
 
-  const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
-  const rand = (min, max) => Math.random() * (max - min) + min;
-  const choice = (arr) => arr[(Math.random() * arr.length) | 0];
-  const now = () => performance.now();
-  const fmtTime = (sec) => {
-    const s = Math.max(0, Math.ceil(sec));
-    const m = Math.floor(s / 60);
-    const r = s % 60;
-    return `${m}:${String(r).padStart(2,'0')}`;
-  };
-
+  // ---------- DOM
   const stage = document.getElementById('stage');
   const canvas = document.getElementById('canvas');
   const ctx = canvas.getContext('2d', { alpha: true });
@@ -248,21 +246,54 @@
   const toastEl = document.getElementById('toast');
 
   const levelLabel = document.getElementById('levelLabel');
-  const ducksLeftLabel = document.getElementById('ducksLeftLabel');
+  const targetsLabel = document.getElementById('targetsLabel');
   const scoreLabel = document.getElementById('scoreLabel');
-
   const timeLabel = document.getElementById('timeLabel');
   const timePill = document.getElementById('timePill');
-
   const tpLabel = document.getElementById('tpLabel');
-
   const bossPill = document.getElementById('bossPill');
   const bossLabel = document.getElementById('bossLabel');
 
   const resetBtn = document.getElementById('resetBtn');
   const muteBtn = document.getElementById('muteBtn');
 
+  // ---------- Utils
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const rand = (a, b) => Math.random() * (b - a) + a;
+  const now = () => performance.now();
+  const fmtTime = (sec) => {
+    const s = Math.max(0, Math.ceil(sec));
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    return `${m}:${String(r).padStart(2,'0')}`;
+  };
+
+  // ---------- Overlay control (HARDENED)
+  function setOverlay(html) {
+    overlay.innerHTML = html;
+    const active = !!html && html.trim().length > 0;
+    overlay.classList.toggle('active', active);
+  }
+  function hideOverlay() { setOverlay(''); }
+  function overlayActive() { return overlay.classList.contains('active'); }
+
+  // If overlay is active, stop clicks from falling through
+  overlay.addEventListener('pointerdown', (e) => { if (e.target === overlay) e.stopPropagation(); }, true);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) e.stopPropagation(); }, true);
+
+  // ---------- Toast
+  let toastTimer = null;
+  function showToast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastEl.classList.remove('show'), 1400);
+  }
+
+  // ---------- Audio (tiny beeps, optional)
+  let audioCtx = null;
   const state = {
+    muted: false,
     running: false,
     paused: false,
     level: 1,
@@ -273,28 +304,16 @@
 
     ducks: [],
     boss: null,
-    particles: [],
-    ripples: [],
-    floatTexts: [],
-
-    pointer: { x: 0, y: 0, down: false },
-    lastT: now(),
-
-    baseDuckRadius: 26,
-    duckRadiusJitter: 8,
-    lakePadding: 28,
 
     tpCooldown: 2.5,
     tpReadyAt: 0,
 
-    shakeT: 0,
-    shakeMag: 0,
+    lastT: now(),
 
-    muted: false
+    // input
+    pointer: {x: 0, y: 0},
   };
 
-  // ---- Audio (no assets)
-  let audioCtx = null;
   function ensureAudio() {
     if (state.muted) return null;
     if (!audioCtx) {
@@ -308,31 +327,25 @@
   function beep(type='hit') {
     const ac = ensureAudio();
     if (!ac) return;
-
     const t0 = ac.currentTime;
     const o = ac.createOscillator();
     const g = ac.createGain();
+    const cfg = {
+      hit: {f1:220,f2:90,d:0.08,w:'square',a:0.10},
+      special:{f1:520,f2:180,d:0.10,w:'triangle',a:0.10},
+      win:{f1:660,f2:990,d:0.16,w:'triangle',a:0.08},
+      lose:{f1:120,f2:50,d:0.20,w:'sawtooth',a:0.06},
+      click:{f1:420,f2:300,d:0.06,w:'sine',a:0.06},
+      boss:{f1:180,f2:60,d:0.14,w:'sawtooth',a:0.08}
+    }[type] || {f1:240,f2:140,d:0.08,w:'sine',a:0.06};
 
-    const settings = {
-      hit:    { f1: 220, f2:  90, dur: 0.08, wave: 'square',   gain: 0.10 },
-      special:{ f1: 520, f2: 180, dur: 0.10, wave: 'triangle', gain: 0.10 },
-      boss:   { f1: 180, f2:  60, dur: 0.14, wave: 'sawtooth', gain: 0.08 },
-      win:    { f1: 660, f2: 990, dur: 0.16, wave: 'triangle', gain: 0.08 },
-      lose:   { f1: 120, f2:  50, dur: 0.20, wave: 'sawtooth', gain: 0.06 },
-      click:  { f1: 420, f2: 300, dur: 0.06, wave: 'sine',     gain: 0.06 },
-    }[type] || { f1: 220, f2: 110, dur: 0.08, wave: 'sine', gain: 0.06 };
-
-    o.type = settings.wave;
-    o.frequency.setValueAtTime(settings.f1, t0);
-    o.frequency.exponentialRampToValueAtTime(settings.f2, t0 + settings.dur);
-
-    g.gain.setValueAtTime(settings.gain, t0);
-    g.gain.exponentialRampToValueAtTime(0.0001, t0 + settings.dur);
-
-    o.connect(g);
-    g.connect(ac.destination);
-    o.start(t0);
-    o.stop(t0 + settings.dur);
+    o.type = cfg.w;
+    o.frequency.setValueAtTime(cfg.f1, t0);
+    o.frequency.exponentialRampToValueAtTime(cfg.f2, t0 + cfg.d);
+    g.gain.setValueAtTime(cfg.a, t0);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + cfg.d);
+    o.connect(g); g.connect(ac.destination);
+    o.start(t0); o.stop(t0 + cfg.d);
   }
 
   function resize() {
@@ -340,61 +353,50 @@
     const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
     canvas.width = Math.floor(r.width * dpr);
     canvas.height = Math.floor(r.height * dpr);
-    canvas.style.width = `${r.width}px`;
-    canvas.style.height = `${r.height}px`;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
   window.addEventListener('resize', resize);
 
-  function isBossLevel(level) { return level % 3 === 0; }
-  function ducksForLevel(level) {
+  // ---------- Difficulty + bosses
+  function isBossLevel(level){ return level % 3 === 0; }
+  function ducksForLevel(level){
     const base = 4;
     const growth = Math.floor(Math.pow(level, 0.85) * 2.2);
     return clamp(base + growth, 4, 44);
   }
-  function speedForLevel(level) { return clamp(0.55 + level * 0.045, 0.55, 2.1); }
-  function timeForLevel(level) {
+  function speedForLevel(level){ return clamp(0.55 + level * 0.045, 0.55, 2.1); }
+  function timeForLevel(level){
     const t = 28 - Math.pow(level, 0.65) * 2.2;
     return clamp(t, 12, 32);
   }
-  function bossHPForLevel(level) {
+  function bossHPForLevel(level){
     const bossIndex = Math.floor(level / 3);
-    const hp = 8 + (bossIndex - 1) * 3;
-    return clamp(hp, 8, 25);
+    return clamp(8 + (bossIndex - 1) * 3, 8, 25);
   }
-  function bossTimeForLevel(level) {
+  function bossTimeForLevel(level){
     const t = 24 - Math.pow(level, 0.55) * 1.6;
     return clamp(t, 14, 26);
   }
-  function bossHearts(hp, hpMax) {
-    const heartsMax = Math.ceil(hpMax / 2);
-    const hearts = Math.ceil(hp / 2);
+
+  function bossHearts(hp, max){
+    const hm = Math.ceil(max/2);
+    const h  = Math.ceil(hp/2);
     let s = '';
-    for (let i=0;i<heartsMax;i++) s += (i < hearts) ? '❤️' : '🤍';
+    for (let i=0;i<hm;i++) s += (i < h) ? '❤️' : '🤍';
     return s;
   }
 
-  function setOverlay(html) { overlay.innerHTML = html; }
-  function hideOverlay() { setOverlay(''); }
-
-  let toastTimer = null;
-  function showToast(msg) {
-    toastEl.textContent = msg;
-    toastEl.classList.add('show');
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => toastEl.classList.remove('show'), 1500);
-  }
-
-  function updateHUD() {
+  // ---------- HUD
+  function updateHUD(){
     levelLabel.textContent = String(state.level);
-    ducksLeftLabel.textContent = String(state.ducks.filter(d => d.alive).length);
+    const remaining = state.boss ? `Boss` : String(state.ducks.filter(d=>d.alive).length);
+    targetsLabel.textContent = remaining;
     scoreLabel.textContent = String(state.score);
-
     timeLabel.textContent = fmtTime(state.timeLeft);
     timePill.classList.toggle('danger', state.timeLeft <= 5);
 
     const tpLeft = state.tpReadyAt - now()/1000;
-    tpLabel.textContent = (tpLeft <= 0) ? 'Ready' : `${tpLeft.toFixed(1)}s`;
+    tpLabel.textContent = tpLeft <= 0 ? 'Ready' : `${tpLeft.toFixed(1)}s`;
 
     if (state.boss) {
       bossPill.style.display = '';
@@ -404,675 +406,383 @@
     }
   }
 
-  function showStartScreen() {
+  // ---------- Overlays
+  function showStart(){
     setOverlay(`
       <div class="card">
         <h2>Heather’s Duck Game 🪠🦆</h2>
         <p>
-          Click/tap ducks to <strong>BONK</strong> them.
-          Double-tap to launch 🧻 and <strong>BOINK</strong> something into submission.
-          Every 3 levels… a boss duck shows up with attitude. 🥊🦆
+          Click/tap to <strong>BONK</strong>.<br/>
+          Double-tap to fire 🧻 and <strong>BOINK</strong>.<br/>
+          Every 3 levels: boss duck 🥊🦆
         </p>
         <div class="row">
-          <button class="btn" id="startBtn" style="border-color:rgba(255,218,74,.5);background:rgba(255,218,74,.22)">Start</button>
-          <button class="btn" id="howBtn">How to play</button>
+          <button class="btn primary" id="startBtn" type="button">Start</button>
+          <button class="btn" id="helpBtn" type="button">Instructions</button>
         </div>
+        <div class="small">If buttons don’t click, we failed the universe. (We didn’t.)</div>
       </div>
     `);
-    document.getElementById('startBtn').onclick = () => { beep('click'); startGame(); };
-    document.getElementById('howBtn').onclick = () => { beep('click'); showToast('BONK 🪠 | BOINK 🧻 | Space pause | R reset | M mute ⏱️'); };
+
+    // Bind immediately after injecting
+    document.getElementById('startBtn').addEventListener('click', () => { beep('click'); startGame(); });
+    document.getElementById('helpBtn').addEventListener('click', () => {
+      beep('click');
+      showToast('BONK 🪠 | BOINK 🧻 | Space pause | R reset | M mute');
+    });
   }
 
-  function showPauseScreen() {
+  function showPause(){
     setOverlay(`
       <div class="card">
         <h2>Paused ⏸️</h2>
-        <p>The timer is frozen. The ducks are still smug. 😌</p>
+        <p>Time is frozen. Ducks are plotting. 🦆🧠</p>
         <div class="row">
-          <button class="btn" id="resumeBtn" style="border-color:rgba(255,218,74,.5);background:rgba(255,218,74,.22)">Resume</button>
-          <button class="btn danger" id="resetBtn2">Reset</button>
+          <button class="btn primary" id="resumeBtn" type="button">Resume</button>
+          <button class="btn danger" id="resetBtn2" type="button">Reset</button>
         </div>
       </div>
     `);
-    document.getElementById('resumeBtn').onclick = () => togglePause(false);
-    document.getElementById('resetBtn2').onclick = () => resetGame();
+    document.getElementById('resumeBtn').addEventListener('click', ()=> togglePause(false));
+    document.getElementById('resetBtn2').addEventListener('click', ()=> resetGame());
   }
 
-  function showLoseScreen(reason) {
-    const remain = state.boss ? `Boss HP remaining: ${state.boss.hp}` :
-      `Ducks remaining: ${state.ducks.filter(d => d.alive).length}`;
+  function showLose(reason){
+    const remain = state.boss ? `Boss HP remaining: ${state.boss.hp}` : `Ducks remaining: ${state.ducks.filter(d=>d.alive).length}`;
     setOverlay(`
       <div class="card">
         <h2>YOU GOT DUCKED 😵‍💫🦆</h2>
         <p>${reason}<br/><strong>${remain}</strong></p>
         <div class="row">
-          <button class="btn" id="retryBtn" style="border-color:rgba(255,218,74,.5);background:rgba(255,218,74,.22)">Replay level</button>
-          <button class="btn danger" id="resetBtn3">Reset run</button>
+          <button class="btn primary" id="retryBtn" type="button">Replay level</button>
+          <button class="btn danger" id="resetBtn3" type="button">Reset run</button>
         </div>
       </div>
     `);
-    document.getElementById('retryBtn').onclick = () => { beep('click'); resumeLevel(state.level, true); };
-    document.getElementById('resetBtn3').onclick = () => resetGame();
+    document.getElementById('retryBtn').addEventListener('click', ()=> { beep('click'); resumeLevel(state.level); });
+    document.getElementById('resetBtn3').addEventListener('click', ()=> resetGame());
   }
 
-  function showBossIntro(level, hp) {
+  function showWin(msg){
+    setOverlay(`
+      <div class="card">
+        <h2>${msg}</h2>
+        <p>Score: <strong>${state.score}</strong> ✨</p>
+        <div class="row">
+          <button class="btn primary" id="nextBtn" type="button">Next level</button>
+          <button class="btn" id="replayBtn" type="button">Replay</button>
+        </div>
+      </div>
+    `);
+    document.getElementById('nextBtn').addEventListener('click', ()=> { beep('click'); state.level++; resumeLevel(state.level); });
+    document.getElementById('replayBtn').addEventListener('click', ()=> { beep('click'); resumeLevel(state.level); });
+  }
+
+  function showBossIntro(level, hp){
     setOverlay(`
       <div class="card">
         <h2>BOSS DUCK INCOMING!! 🦆💢</h2>
-        <p>
-          Level ${level} is a boss fight.<br/>
-          Hit the boss <strong>${hp}</strong> times before time runs out ⏱️<br/>
-          (Double-tap 🧻 does extra damage.)
-        </p>
+        <p>Hit it <strong>${hp}</strong> times before the timer hits 0 ⏱️</p>
         <div class="row">
-          <button class="btn" id="fightBtn" style="border-color:rgba(255,218,74,.5);background:rgba(255,218,74,.22)">FIGHT!</button>
+          <button class="btn primary" id="fightBtn" type="button">FIGHT!</button>
         </div>
       </div>
     `);
-    document.getElementById('fightBtn').onclick = () => {
+    document.getElementById('fightBtn').addEventListener('click', ()=>{
       beep('click');
       hideOverlay();
       state.paused = false;
       state.lastT = now();
       requestAnimationFrame(loop);
-    };
+    });
   }
 
-  function addRipple(x, y, power=1) { state.ripples.push({ x, y, r: 6, a: 0.55 * power, w: 1.6 + power * 0.6 }); }
-  function addPlungeBurst(x, y, extra=0) {
-    const n = 10 + (Math.random() * 8 | 0) + extra;
-    for (let i = 0; i < n; i++) {
-      const ang = rand(0, Math.PI * 2);
-      const sp = rand(90, 260);
-      state.particles.push({ x, y, vx: Math.cos(ang)*sp, vy: Math.sin(ang)*sp, r: rand(2,4.8), life: rand(0.25,0.55), t: 0 });
-    }
-  }
-  function addFloatText(x, y, text, kind='hit') { state.floatTexts.push({ x, y, vx: rand(-15,15), vy: rand(-55,-85), t:0, life:0.65, text, kind }); }
-  function shake(mag=3.5) { state.shakeT = 0.18; state.shakeMag = Math.max(state.shakeMag, mag); }
-
-  function spawnNormalLevel(level) {
+  // ---------- Level spawn
+  function spawnNormal(level){
     state.boss = null;
     state.ducks = [];
-    state.particles = [];
-    state.ripples = [];
-    state.floatTexts = [];
-
-    const count = ducksForLevel(level);
-    const speedScale = speedForLevel(level);
-
     const w = stage.clientWidth;
     const h = stage.clientHeight;
-    const pad = state.lakePadding;
-
-    let attempts = 0;
-    while (state.ducks.length < count && attempts++ < 2200) {
-      const r = state.baseDuckRadius + rand(-state.duckRadiusJitter, state.duckRadiusJitter);
-      const x = rand(pad + r, w - pad - r);
-      const y = rand(pad + r, h - pad - r);
-      const ok = state.ducks.every(d => Math.hypot(d.x - x, d.y - y) > (d.r + r) * 0.85);
-      if (!ok) continue;
-
-      const angle = rand(0, Math.PI * 2);
-      const sp = rand(40, 78) * speedScale;
-
-      state.ducks.push({ x,y,r, vx: Math.cos(angle)*sp, vy: Math.sin(angle)*sp, bob: rand(0, Math.PI*2), alive:true, hue: choice([42,45,48,50]) });
+    const count = ducksForLevel(level);
+    const speed = speedForLevel(level);
+    for (let i=0;i<count;i++){
+      const ang = rand(0, Math.PI*2);
+      state.ducks.push({
+        x: rand(40, w-40),
+        y: rand(40, h-40),
+        r: rand(18, 26),
+        vx: Math.cos(ang) * rand(40, 85) * speed,
+        vy: Math.sin(ang) * rand(40, 85) * speed,
+        alive: true
+      });
     }
-
     state.levelTime = timeForLevel(level);
     state.timeLeft = state.levelTime;
-
-    updateHUD();
-    showToast(`Level ${level}: ${count} ducks. Timer is judging you ⏱️🦆`);
+    showToast(`Level ${level} • BONK ${count} ducks 🦆`);
   }
 
-  function spawnBossLevel(level) {
-    state.ducks = [];
-    state.particles = [];
-    state.ripples = [];
-    state.floatTexts = [];
-
-    const hp = bossHPForLevel(level);
+  function spawnBoss(level){
     const w = stage.clientWidth;
     const h = stage.clientHeight;
-
+    const hp = bossHPForLevel(level);
+    state.ducks = [];
     state.boss = {
-      x: w*0.5, y: h*0.52, r: 72, vx: 0, vy: 0, bob: rand(0, Math.PI*2), hue: 48,
+      x: w*0.5, y: h*0.5, r: 70,
+      vx: rand(-140,140), vy: rand(-120,120),
       hpMax: hp, hp: hp,
-      mode: 'idle', tMode: 0,
-      telegraphDur: 0.85, chargeDur: 0.65, stunDur: 0.55,
-      cx: w*0.5, cy: h*0.5,
+      mode: 'idle', t: 0
     };
-
     state.levelTime = bossTimeForLevel(level);
     state.timeLeft = state.levelTime;
-
-    updateHUD();
     showBossIntro(level, hp);
-    showToast(`Boss duck loaded. Plunger boxing begins 🥊🪠`);
   }
 
-  function resumeLevel(level) {
-    state.paused = false;
+  function resumeLevel(level){
     state.running = true;
+    state.paused = false;
     state.tpReadyAt = now()/1000 + 0.4;
-
-    if (isBossLevel(level)) {
-      spawnBossLevel(level);
-      state.paused = true; // wait for "FIGHT!"
-    } else {
-      spawnNormalLevel(level);
-      hideOverlay();
-      state.lastT = now();
-      requestAnimationFrame(loop);
-    }
-  }
-
-  function tpReady() { return (now()/1000) >= state.tpReadyAt; }
-  function spendTP() { state.tpReadyAt = now()/1000 + state.tpCooldown; }
-
-  function bossTakeDamage(dmg, word) {
-    const b = state.boss;
-    b.hp = Math.max(0, b.hp - dmg);
-    state.score += (dmg === 2) ? 25 : 12;
-
-    beep('boss');
-    shake(dmg === 2 ? 5.0 : 3.6);
-    addPlungeBurst(b.x, b.y, dmg === 2 ? 18 : 10);
-    addRipple(b.x, b.y + b.r*0.35, dmg === 2 ? 2.0 : 1.5);
-    addFloatText(b.x + rand(-10,10), b.y - b.r, word, dmg === 2 ? 'special' : 'hit');
-    if (dmg === 2) { b.mode = 'stun'; b.tMode = 0; }
+    if (isBossLevel(level)) { spawnBoss(level); state.paused = true; }
+    else { spawnNormal(level); hideOverlay(); state.lastT = now(); requestAnimationFrame(loop); }
     updateHUD();
-    if (b.hp <= 0) bossDefeated();
   }
 
-  function attemptBonk(x, y) {
+  // ---------- Input (HARDENED: ignore stage input while overlay is active)
+  function stagePoint(e){
+    const r = stage.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  }
+
+  function tpReady(){ return (now()/1000) >= state.tpReadyAt; }
+  function spendTP(){ state.tpReadyAt = now()/1000 + state.tpCooldown; }
+
+  function bonkAt(x,y){
     if (!state.running || state.paused) return;
-    addRipple(x, y, 1);
 
     if (state.boss) {
       const b = state.boss;
-      const dist = Math.hypot(b.x - x, b.y - y);
-      const hitMul = (b.mode === 'charge') ? 0.75 : 1.0;
-      if (dist <= b.r * hitMul) { bossTakeDamage(1, 'BONK!'); return; }
-      state.score = Math.max(0, state.score - 1);
+      if (Math.hypot(b.x-x, b.y-y) <= b.r) {
+        b.hp -= 1;
+        state.score += 12;
+        beep('boss');
+        showToast('BONK! 🪠');
+        if (b.hp <= 0) { state.paused = true; beep('win'); state.score += 150; updateHUD(); showWin('BOSS DOWN!! 🥊🦆💥'); }
+      }
       updateHUD();
       return;
     }
 
-    let best = null, bestD = Infinity;
-    for (const d of state.ducks) {
+    let hit = null;
+    for (const d of state.ducks){
       if (!d.alive) continue;
-      const dist = Math.hypot(d.x - x, d.y - y);
-      if (dist <= d.r && dist < bestD) { bestD = dist; best = d; }
+      if (Math.hypot(d.x-x, d.y-y) <= d.r) { hit = d; break; }
     }
-
-    if (best) {
-      best.alive = false;
-      const gained = Math.max(5, Math.floor(25 - bestD));
-      state.score += gained;
-
+    if (hit){
+      hit.alive = false;
+      state.score += 10;
       beep('hit');
-      shake(2.8);
-      addPlungeBurst(best.x, best.y, 4);
-      addRipple(best.x, best.y, 1.4);
-      addFloatText(best.x, best.y - best.r, 'BONK!', 'hit');
-      showToast(`BONK! 🪠 +${gained}`);
-
-      updateHUD();
-      if (state.ducks.every(d => !d.alive)) levelComplete();
-    } else {
-      state.score = Math.max(0, state.score - 1);
+      showToast('BONK! 🪠');
+      if (state.ducks.every(d=>!d.alive)) { state.paused = true; beep('win'); state.score += 60; updateHUD(); showWin('LAKE CLEARED ✅🦆✨'); }
       updateHUD();
     }
   }
 
-  function attemptTPRoll(x, y) {
+  function boinkAt(x,y){
     if (!state.running || state.paused) return;
-    if (!tpReady()) { showToast('🧻 TP reloading...'); return; }
+    if (!tpReady()) { showToast('🧻 reloading...'); return; }
     spendTP();
 
-    addRipple(x, y, 1.2);
-    beep('special');
-    shake(3.8);
-
-    if (state.boss) {
+    if (state.boss){
       const b = state.boss;
-      const dist = Math.hypot(b.x - x, b.y - y);
-      if (dist <= b.r * 1.15) { bossTakeDamage(2, 'BOINK!'); addFloatText(b.x, b.y - b.r, '🧻🌀', 'special'); return; }
-      addFloatText(x, y, '🧻 whiff...', 'special');
+      if (Math.hypot(b.x-x, b.y-y) <= b.r*1.15) {
+        b.hp -= 2;
+        state.score += 25;
+        beep('boss');
+        showToast('BOINK! 🧻🌀');
+        if (b.hp <= 0) { state.paused = true; beep('win'); state.score += 150; updateHUD(); showWin('BOSS WRAPPED!! 🧻🦆💥'); }
+        updateHUD();
+        return;
+      }
+      showToast('BOINK! 🧻 (miss)');
       updateHUD();
       return;
     }
 
-    let best = null, bestD = Infinity;
-    for (const d of state.ducks) {
+    // find nearest duck
+    let best = null, bestD = 1e9;
+    for (const d of state.ducks){
       if (!d.alive) continue;
-      const dist = Math.hypot(d.x - x, d.y - y);
-      if (dist <= d.r * 1.35 && dist < bestD) { bestD = dist; best = d; }
+      const dd = Math.hypot(d.x-x, d.y-y);
+      if (dd < bestD) { bestD = dd; best = d; }
     }
-
-    if (best) {
+    if (best && bestD <= best.r*1.8){
       best.alive = false;
-      const gained = 18;
-      state.score += gained;
-
-      addPlungeBurst(best.x, best.y, 10);
-      addRipple(best.x, best.y, 1.8);
-      addFloatText(best.x, best.y - best.r, 'BOINK!', 'special');
-      addFloatText(best.x, best.y - best.r*0.35, '🧻🌀', 'special');
-      showToast(`BOINK! 🧻 +${gained} (captured in 4-ply)`);
+      state.score += 18;
+      beep('special');
+      showToast('BOINK! 🧻 (captured)');
+      if (state.ducks.every(d=>!d.alive)) { state.paused = true; beep('win'); state.score += 60; updateHUD(); showWin('LAKE CLEARED ✅🦆✨'); }
       updateHUD();
-      if (state.ducks.every(d => !d.alive)) levelComplete();
     } else {
-      addFloatText(x, y, '🧻 NOPE', 'special');
-      showToast('BOINK! 🧻 (hit nothing but vibes)');
+      beep('special');
+      showToast('BOINK! 🧻 (hit nothing but air)');
       updateHUD();
     }
   }
 
-  function stagePointFromEvent(e) {
-    const r = stage.getBoundingClientRect();
-    const clientX = (e.touches && e.touches[0]) ? e.touches[0].clientX : e.clientX;
-    const clientY = (e.touches && e.touches[0]) ? e.touches[0].clientY : e.clientY;
-    return { x: clientX - r.left, y: clientY - r.top };
-  }
-
-  // Pointer tracking for cursor
-  stage.addEventListener('pointerdown', (e) => {
+  // Click / dblclick
+  stage.addEventListener('click', (e)=>{
+    if (overlayActive()) return;
+    const p = stagePoint(e);
+    bonkAt(p.x,p.y);
+  });
+  stage.addEventListener('dblclick', (e)=>{
+    if (overlayActive()) return;
     e.preventDefault();
-    stage.setPointerCapture?.(e.pointerId);
-    const p = stagePointFromEvent(e);
-    state.pointer = { x: p.x, y: p.y, down: true };
+    const p = stagePoint(e);
+    boinkAt(p.x,p.y);
   });
-  stage.addEventListener('pointermove', (e) => {
-    const p = stagePointFromEvent(e);
-    state.pointer.x = p.x; state.pointer.y = p.y;
-  });
-  stage.addEventListener('pointerup', () => { state.pointer.down = false; });
 
-  // Click vs double click (desktop)
-  stage.addEventListener('click', (e) => { const p = stagePointFromEvent(e); attemptBonk(p.x, p.y); });
-  stage.addEventListener('dblclick', (e) => { e.preventDefault(); const p = stagePointFromEvent(e); attemptTPRoll(p.x, p.y); });
-
-  // Double-tap fallback (mobile)
-  let lastTapT = 0, lastTapX = 0, lastTapY = 0;
-  stage.addEventListener('pointerdown', (e) => {
-    const p = stagePointFromEvent(e);
+  // mobile double-tap
+  let lastTapT=0, lastX=0, lastY=0;
+  stage.addEventListener('pointerdown', (e)=>{
+    if (overlayActive()) return;
+    const p = stagePoint(e);
     const t = now();
     const dt = t - lastTapT;
-    const dist = Math.hypot(p.x - lastTapX, p.y - lastTapY);
-    if (dt < 260 && dist < 26) {
-      attemptTPRoll(p.x, p.y);
+    const dist = Math.hypot(p.x-lastX, p.y-lastY);
+    if (dt < 260 && dist < 28) {
+      boinkAt(p.x,p.y);
       lastTapT = 0;
     } else {
-      lastTapT = t; lastTapX = p.x; lastTapY = p.y;
+      lastTapT = t; lastX = p.x; lastY = p.y;
     }
+    state.pointer.x = p.x; state.pointer.y = p.y;
   });
 
-  window.addEventListener('keydown', (e) => {
+  // keyboard
+  window.addEventListener('keydown', (e)=>{
     const k = e.key.toLowerCase();
     if (k === ' ') { e.preventDefault(); togglePause(); }
-    else if (k === 'r') resetGame();
-    else if (k === 'm') toggleMute();
+    if (k === 'r') resetGame();
+    if (k === 'm') toggleMute();
   });
 
-  resetBtn.onclick = () => resetGame();
-  muteBtn.onclick = () => toggleMute();
-
-  function toggleMute() {
+  function toggleMute(){
     state.muted = !state.muted;
     muteBtn.textContent = state.muted ? '🔇 Muted' : '🔊 Sound';
-    showToast(state.muted ? 'Muted. Shhh, ducks.' : 'Sound on. Let the BONK be heard.');
+    showToast(state.muted ? 'Muted.' : 'Sound on.');
     if (!state.muted) ensureAudio();
   }
 
-  function startGame() {
+  muteBtn.addEventListener('click', ()=> toggleMute());
+  resetBtn.addEventListener('click', ()=> resetGame());
+
+  function togglePause(force){
+    if (!state.running) return;
+    state.paused = (typeof force === 'boolean') ? !force : !state.paused;
+    if (state.paused) { beep('click'); showPause(); }
+    else { beep('click'); hideOverlay(); state.lastT = now(); requestAnimationFrame(loop); }
+  }
+
+  function startGame(){
+    hideOverlay();
     state.level = 1;
     state.score = 0;
     state.running = true;
     state.paused = false;
     state.tpReadyAt = now()/1000;
-
     resize();
     resumeLevel(state.level);
   }
 
-  function resetGame() {
+  function resetGame(){
     beep('click');
     state.running = false;
     state.paused = false;
     state.level = 1;
     state.score = 0;
-    state.timeLeft = 0;
-    state.levelTime = 0;
     state.ducks = [];
     state.boss = null;
-    state.particles = [];
-    state.ripples = [];
-    state.floatTexts = [];
+    state.timeLeft = 0;
     updateHUD();
-    showStartScreen();
+    showStart();
   }
 
-  function togglePause(force) {
-    if (!state.running) return;
-    state.paused = (typeof force === 'boolean') ? !force : !state.paused;
-    if (state.paused) { beep('click'); showPauseScreen(); }
-    else { beep('click'); hideOverlay(); state.lastT = now(); requestAnimationFrame(loop); }
-  }
-
-  function levelComplete() {
-    state.paused = true;
-    beep('win');
-    const bonus = Math.floor(60 + state.level * 10 + state.timeLeft * 2);
-    state.score += bonus;
-    updateHUD();
-
-    setOverlay(`
-      <div class="card">
-        <h2>Lake Cleared ✅🦆✨</h2>
-        <p>Level ${state.level} complete! Bonus <strong style="color: var(--ok)">${bonus}</strong>.</p>
-        <div class="row">
-          <button class="btn" id="nextBtn" style="border-color:rgba(255,218,74,.5);background:rgba(255,218,74,.22)">Next level</button>
-          <button class="btn" id="replayBtn">Replay</button>
-        </div>
-      </div>
-    `);
-
-    document.getElementById('nextBtn').onclick = () => { beep('click'); state.level += 1; resumeLevel(state.level); };
-    document.getElementById('replayBtn').onclick = () => { beep('click'); resumeLevel(state.level); };
-  }
-
-  function bossDefeated() {
-    state.paused = true;
-    beep('win');
-    const bonus = Math.floor(150 + state.level * 25 + state.timeLeft * 3);
-    state.score += bonus;
-    updateHUD();
-
-    setOverlay(`
-      <div class="card">
-        <h2>BOSS DUCK DEFEATED!! 🥊🦆💥</h2>
-        <p>Bonus <strong style="color: var(--ok)">${bonus}</strong> 🪙</p>
-        <div class="row">
-          <button class="btn" id="nextBtn" style="border-color:rgba(255,218,74,.5);background:rgba(255,218,74,.22)">Next level</button>
-          <button class="btn" id="replayBtn">Replay boss</button>
-        </div>
-      </div>
-    `);
-
-    document.getElementById('nextBtn').onclick = () => { beep('click'); state.level += 1; resumeLevel(state.level); };
-    document.getElementById('replayBtn').onclick = () => { beep('click'); resumeLevel(state.level); };
-  }
-
-  function updateBoss(dt, w, h, pad) {
-    const b = state.boss;
-    b.bob += dt * 2.0;
-    b.tMode += dt;
-
-    const minX = pad + b.r, maxX = w - pad - b.r;
-    const minY = pad + b.r, maxY = h - pad - b.r;
-
-    if (b.mode === 'idle') {
-      const sp = 40 + state.level * 2.0;
-      const ang = rand(0, Math.PI*2);
-      b.vx += Math.cos(ang) * dt * 40;
-      b.vy += Math.sin(ang) * dt * 40;
-      const cur = Math.hypot(b.vx, b.vy);
-      const cap = clamp(sp, 40, 85);
-      if (cur > cap) { b.vx = (b.vx/cur)*cap; b.vy = (b.vy/cur)*cap; }
-
-      if (b.tMode > rand(1.1, 1.8)) {
-        b.mode = 'telegraph'; b.tMode = 0;
-        b.telegraphDur = rand(0.65, 0.95);
-        b.cx = rand(minX, maxX);
-        b.cy = rand(minY, maxY);
-        showToast('Boss is winding up… 🦆💢');
-      }
-    }
-    else if (b.mode === 'telegraph') {
-      b.vx *= (1 - dt*3);
-      b.vy *= (1 - dt*3);
-      if (b.tMode >= b.telegraphDur) {
-        b.mode = 'charge'; b.tMode = 0;
-        b.chargeDur = rand(0.55, 0.85);
-        const dx = b.cx - b.x, dy = b.cy - b.y;
-        const d = Math.max(1, Math.hypot(dx, dy));
-        const dash = clamp(380 + state.level * 10, 380, 520);
-        b.vx = (dx / d) * dash;
-        b.vy = (dy / d) * dash;
-        showToast('CHARGE!! 🦆💨');
-      }
-    }
-    else if (b.mode === 'charge') {
-      if (b.tMode >= b.chargeDur) {
-        b.mode = 'stun'; b.tMode = 0;
-        b.stunDur = rand(0.45, 0.70);
-        b.vx *= 0.25; b.vy *= 0.25;
-        showToast('Boss is dizzy… BONK window! 😵‍💫');
-      }
-    }
-    else if (b.mode === 'stun') {
-      b.vx *= (1 - dt*4);
-      b.vy *= (1 - dt*4);
-      if (b.tMode >= b.stunDur) { b.mode = 'idle'; b.tMode = 0; }
-    }
-
-    b.x += b.vx * dt; b.y += b.vy * dt;
-
-    if (b.x < minX) { b.x = minX; b.vx = Math.abs(b.vx); addRipple(b.x, b.y, 0.9); }
-    if (b.x > maxX) { b.x = maxX; b.vx = -Math.abs(b.vx); addRipple(b.x, b.y, 0.9); }
-    if (b.y < minY) { b.y = minY; b.vy = Math.abs(b.vy); addRipple(b.x, b.y, 0.9); }
-    if (b.y > maxY) { b.y = maxY; b.vy = -Math.abs(b.vy); addRipple(b.x, b.y, 0.9); }
-
-    if (b.mode === 'charge' && Math.random() < dt * 1.8) addRipple(b.x, b.y + b.r*0.35, 0.7);
-  }
-
-  function update(dt) {
-    const w = stage.clientWidth;
-    const h = stage.clientHeight;
-    const pad = state.lakePadding;
-
+  // ---------- Update/render
+  function update(dt){
     state.timeLeft -= dt;
-    if (state.timeLeft <= 0) {
+    if (state.timeLeft <= 0){
       state.timeLeft = 0;
       state.paused = true;
       beep('lose');
       updateHUD();
-      showLoseScreen("Time’s up ⏱️ The lake has declared victory.");
+      showLose("Time’s up ⏱️");
       return;
     }
 
-    if (state.boss) updateBoss(dt, w, h, pad);
+    const w = stage.clientWidth, h = stage.clientHeight;
+    const pad = 18;
 
-    for (const d of state.ducks) {
+    // boss movement
+    if (state.boss){
+      const b = state.boss;
+      b.x += b.vx*dt; b.y += b.vy*dt;
+      if (b.x < pad+b.r || b.x > w-pad-b.r) b.vx *= -1;
+      if (b.y < pad+b.r || b.y > h-pad-b.r) b.vy *= -1;
+      bossLabel.textContent = bossHearts(b.hp, b.hpMax);
+    }
+
+    // ducks movement
+    for (const d of state.ducks){
       if (!d.alive) continue;
-      d.bob += dt * 2.4;
-      d.x += d.vx * dt;
-      d.y += d.vy * dt;
-
-      const minX = pad + d.r, maxX = w - pad - d.r;
-      const minY = pad + d.r, maxY = h - pad - d.r;
-
-      if (d.x < minX) { d.x = minX; d.vx = Math.abs(d.vx); addRipple(d.x, d.y, 0.7); }
-      if (d.x > maxX) { d.x = maxX; d.vx = -Math.abs(d.vx); addRipple(d.x, d.y, 0.7); }
-      if (d.y < minY) { d.y = minY; d.vy = Math.abs(d.vy); addRipple(d.x, d.y, 0.7); }
-      if (d.y > maxY) { d.y = maxY; d.vy = -Math.abs(d.vy); addRipple(d.x, d.y, 0.7); }
-
-      const wobble = clamp(0.65 + state.level * 0.01, 0.65, 1.0);
-      const turn = rand(-1, 1) * dt * wobble;
-      const cos = Math.cos(turn), sin = Math.sin(turn);
-      const nvx = d.vx * cos - d.vy * sin;
-      const nvy = d.vx * sin + d.vy * cos;
-      d.vx = nvx; d.vy = nvy;
-
-      const sp = Math.hypot(d.vx, d.vy);
-      const spMax = 220;
-      if (sp > spMax) { d.vx = (d.vx / sp) * spMax; d.vy = (d.vy / sp) * spMax; }
-
-      if (Math.random() < dt * 0.35) addRipple(d.x, d.y + d.r*0.45, 0.35);
+      d.x += d.vx*dt; d.y += d.vy*dt;
+      if (d.x < pad+d.r || d.x > w-pad-d.r) d.vx *= -1;
+      if (d.y < pad+d.r || d.y > h-pad-d.r) d.vy *= -1;
     }
-
-    for (let i = state.particles.length - 1; i >= 0; i--) {
-      const p = state.particles[i];
-      p.t += dt;
-      const k = p.t / p.life;
-      p.x += p.vx * dt;
-      p.y += p.vy * dt;
-      p.vx *= (1 - dt * 3.2);
-      p.vy *= (1 - dt * 3.2);
-      if (k >= 1) state.particles.splice(i, 1);
-    }
-
-    for (let i = state.ripples.length - 1; i >= 0; i--) {
-      const r = state.ripples[i];
-      r.r += dt * 120;
-      r.a -= dt * 0.95;
-      if (r.a <= 0) state.ripples.splice(i, 1);
-    }
-
-    for (let i = state.floatTexts.length - 1; i >= 0; i--) {
-      const ft = state.floatTexts[i];
-      ft.t += dt;
-      ft.x += ft.vx * dt;
-      ft.y += ft.vy * dt;
-      ft.vy += dt * 60;
-      if (ft.t >= ft.life) state.floatTexts.splice(i, 1);
-    }
-
-    state.shakeT = Math.max(0, state.shakeT - dt);
-    state.shakeMag *= (1 - dt * 6);
 
     updateHUD();
   }
 
-  function drawPlungerCursor(x, y, pressed) {
-    const s = pressed ? 1.06 : 1.0;
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.scale(s, s);
+  function render(){
+    const w = stage.clientWidth, h = stage.clientHeight;
+    ctx.clearRect(0,0,w,h);
 
-    ctx.strokeStyle = 'rgba(0,0,0,.35)';
-    ctx.lineWidth = 3;
-    ctx.lineCap = 'round';
-
-    // handle
-    ctx.fillStyle = 'hsl(24 35% 34%)';
-    ctx.beginPath(); roundRect(-4, -42, 8, 44, 4); ctx.fill(); ctx.stroke();
-
-    // cup
-    ctx.fillStyle = 'hsl(350 85% 55%)';
-    ctx.beginPath(); roundRect(-22, -6, 44, 18, 10); ctx.fill(); ctx.stroke();
-    ctx.beginPath(); roundRect(-28, 6, 56, 14, 12); ctx.fill(); ctx.stroke();
-
-    ctx.restore();
-  }
-
-  function roundRect(x, y, w, h, r) {
-    const rr = Array.isArray(r) ? r : [r, r, r, r];
-    const [r1, r2, r3, r4] = rr.map(v => Math.max(0, Math.min(v, Math.min(w, h) / 2)));
-    ctx.moveTo(x + r1, y);
-    ctx.lineTo(x + w - r2, y);
-    ctx.quadraticCurveTo(x + w, y, x + w, y + r2);
-    ctx.lineTo(x + w, y + h - r3);
-    ctx.quadraticCurveTo(x + w, y + h, x + w - r3, y + h);
-    ctx.lineTo(x + r4, y + h);
-    ctx.quadraticCurveTo(x, y + h, x, y + h - r4);
-    ctx.lineTo(x, y + r1);
-    ctx.quadraticCurveTo(x, y, x + r1, y);
-    ctx.closePath();
-  }
-
-  function render() {
-    const w = stage.clientWidth;
-    const h = stage.clientHeight;
-
-    const sx = (state.shakeT > 0) ? rand(-state.shakeMag, state.shakeMag) : 0;
-    const sy = (state.shakeT > 0) ? rand(-state.shakeMag, state.shakeMag) : 0;
-
-    ctx.clearRect(0, 0, w, h);
-    ctx.save();
-    ctx.translate(sx, sy);
-
-    const g = ctx.createLinearGradient(0, 0, 0, h);
-    g.addColorStop(0, 'rgba(255,255,255,.06)');
-    g.addColorStop(1, 'rgba(0,0,0,.10)');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, w, h);
-
-    for (const r of state.ripples) {
-      ctx.save();
-      ctx.globalAlpha = r.a;
-      ctx.strokeStyle = 'rgba(255,255,255,.55)';
-      ctx.lineWidth = r.w;
-      ctx.beginPath();
-      ctx.ellipse(r.x, r.y, r.r, r.r*0.55, 0, 0, Math.PI*2);
-      ctx.stroke();
-      ctx.restore();
-    }
-
-    // (Minimal visuals for ducks/boss to keep this fix PR focused on publishing)
-    // If you already have richer art in your prior version, keep that; this file is still fully playable.
-    for (const d of state.ducks) {
+    // draw ducks
+    for (const d of state.ducks){
       if (!d.alive) continue;
-      ctx.save();
-      ctx.translate(d.x, d.y + Math.sin(d.bob)*2);
-      ctx.fillStyle = `hsl(${d.hue} 95% 58%)`;
-      ctx.beginPath(); ctx.arc(0,0,d.r,0,Math.PI*2); ctx.fill();
-      ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(d.r*0.35,-d.r*0.2,3,0,Math.PI*2); ctx.fill();
-      ctx.restore();
+      ctx.fillStyle = 'rgba(255, 220, 80, .95)';
+      ctx.beginPath(); ctx.arc(d.x,d.y,d.r,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle = 'rgba(0,0,0,.8)';
+      ctx.beginPath(); ctx.arc(d.x+d.r*0.25,d.y-d.r*0.2,3,0,Math.PI*2); ctx.fill();
     }
-    if (state.boss) {
+
+    // draw boss
+    if (state.boss){
       const b = state.boss;
-      ctx.save();
-      ctx.translate(b.x, b.y + Math.sin(b.bob)*2.5);
-      ctx.fillStyle = `hsl(${b.hue} 95% 55%)`;
-      ctx.beginPath(); ctx.arc(0,0,b.r,0,Math.PI*2); ctx.fill();
-      ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(b.r*0.3,-b.r*0.2,6,0,Math.PI*2); ctx.fill();
-      ctx.restore();
+      ctx.fillStyle = 'rgba(255, 200, 60, .98)';
+      ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle = 'rgba(0,0,0,.85)';
+      ctx.beginPath(); ctx.arc(b.x+b.r*0.25,b.y-b.r*0.2,7,0,Math.PI*2); ctx.fill();
+      ctx.font = 'bold 18px system-ui';
+      ctx.fillText('💢', b.x-b.r*0.2, b.y-b.r*0.8);
     }
-
-    for (const ft of state.floatTexts) {
-      const k = ft.t / ft.life;
-      ctx.save();
-      ctx.globalAlpha = 1 - k;
-      ctx.font = `900 ${ft.kind === 'special' ? 26 : 22}px system-ui`;
-      ctx.lineWidth = 6;
-      ctx.strokeStyle = 'rgba(0,0,0,.45)';
-      ctx.fillStyle = (ft.kind === 'special') ? 'rgba(255,218,74,.95)' : 'rgba(255,255,255,.95)';
-      ctx.strokeText(ft.text, ft.x, ft.y);
-      ctx.fillText(ft.text, ft.x, ft.y);
-      ctx.restore();
-    }
-
-    if (state.running && !state.paused) drawPlungerCursor(state.pointer.x, state.pointer.y, state.pointer.down);
-
-    ctx.restore();
   }
 
-  function loop(t) {
+  function loop(t){
     if (!state.running || state.paused) return;
-    const dt = clamp((t - state.lastT) / 1000, 0, 0.033);
+    const dt = clamp((t - state.lastT)/1000, 0, 0.033);
     state.lastT = t;
     update(dt);
     render();
     requestAnimationFrame(loop);
   }
 
-  function boot() {
+  // ---------- Boot
+  function boot(){
     resize();
     updateHUD();
-    showStartScreen();
-
-    const r = stage.getBoundingClientRect();
-    state.pointer.x = r.width / 2;
-    state.pointer.y = r.height / 2;
-
-    const idle = () => {
-      if (state.running && !state.paused) return;
-      render();
-      requestAnimationFrame(idle);
-    };
+    showStart();
+    // keep a gentle render loop when paused so you see something
+    const idle = () => { if (!state.running || state.paused) render(); requestAnimationFrame(idle); };
     requestAnimationFrame(idle);
   }
 
